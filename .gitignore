@@ -1,0 +1,5 @@
+*.sum
+*.pb.go
+*.config
+main
+.vscode/
