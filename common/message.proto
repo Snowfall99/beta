@@ -1,0 +1,11 @@
+syntax = "proto3";
+package messagepb;
+
+option go_package = "./messagepb";
+
+message Msg {}
+
+enum VerifyResult {
+    ACCEPT = 0;
+    REJECT = 1;
+}
