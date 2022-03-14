@@ -1,3 +1,3 @@
-module snowfall/themix
+module themix.new.io
 
 go 1.16
