@@ -1,0 +1,16 @@
+syntax = "proto3";
+package configpb;
+
+option go_package = "./configpb";
+
+message Configuration {
+    uint32 id = 1;
+    uint32 batch = 2;
+    repeated Peer peers = 3;
+}
+
+message Peer {
+    uint32 id = 1;
+    string addr = 2;
+    string client = 3;
+}
