@@ -1,0 +1,21 @@
+syntax = "proto3";
+package clientpb;
+
+option go_package = "./clientpb";
+
+message Payload {
+    bytes signature = 1;
+    string payload = 2;
+}
+
+message Response {
+    bool ok = 1;
+}
+
+message Request {
+    repeated Payload payload = 1;
+}
+
+service Themix {
+    rpc Post(Request) returns (Response) {}
+}
