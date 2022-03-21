@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"themix.new.io/client/clientpb"
 	"themix.new.io/common/messagepb"
 )
@@ -16,6 +17,8 @@ type Proposer struct {
 	outputc    chan *messagepb.Msg
 	verifyReq  chan *clientpb.Payload
 	verifyResp chan messagepb.VerifyResult
+	id         uint32
+	seq        uint32
 }
 
 type server struct {
@@ -32,7 +35,7 @@ func (s *server) Post(ctx context.Context, req *clientpb.Request) (*clientpb.Res
 
 // Init verify pool for client message's signature verification
 // Setup http handler to receive client requests.
-func initProposer(batchsize uint32, client string, reqc chan *clientpb.Request, repc chan []byte, outputc chan *messagepb.Msg) {
+func initProposer(batchsize uint32, client string, reqc chan *clientpb.Request, repc chan []byte, outputc chan *messagepb.Msg, id uint32) {
 	verifyReq := make(chan *clientpb.Payload, batchsize)
 	verifyResp := make(chan messagepb.VerifyResult)
 	proposer := &Proposer{
@@ -40,18 +43,19 @@ func initProposer(batchsize uint32, client string, reqc chan *clientpb.Request, 
 		outputc:    outputc,
 		verifyReq:  verifyReq,
 		verifyResp: verifyResp,
+		id:         id,
 	}
 	go proposer.initVerifyPool()
 	go proposer.run()
 	listener, err := net.Listen("tcp", client)
 	if err != nil {
-		log.Fatal("net.Listen: ", err)
+		log.Fatal("[proposer] net.Listen: ", err)
 	}
 	s := grpc.NewServer()
 	clientpb.RegisterThemixServer(s, &server{reqc: reqc, repc: repc})
 	err = s.Serve(listener)
 	if err != nil {
-		log.Fatal("s.Serve: ", err)
+		log.Fatal("[proposer] s.Serve: ", err)
 	}
 }
 
@@ -95,7 +99,19 @@ func (proposer *Proposer) run() {
 		}
 		if result {
 			// TODO(chenzx): Send message to outputc after noise layer is completed.
-			proposer.outputc <- &messagepb.Msg{}
+			data, err := proto.Marshal(req)
+			if err != nil {
+				log.Fatal("[proposer] proto.Marshal: ", err)
+			}
+			msg := &messagepb.Msg{
+				Type:     messagepb.MsgType_VAL,
+				Proposer: proposer.id,
+				Seq:      proposer.seq,
+				Content:  data,
+			}
+			log.Printf("[proposer] propose: proposer(%d), seq(%d), content(%d)\n", proposer.id, proposer.seq, msg.Content[0])
+			proposer.seq++
+			proposer.outputc <- msg
 		}
 	}
 }
