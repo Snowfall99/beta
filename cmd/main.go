@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 
 	"google.golang.org/protobuf/encoding/prototext"
@@ -9,17 +10,19 @@ import (
 )
 
 func main() {
-	// TODO(chenzx): To be implemented.
+	// TODO(chenzx): Under construction.
+	// id is set as a flag parameter for local test
+	id := flag.Uint("id", 0, "ID of themix node")
+	flag.Parse()
 	data, err := os.ReadFile("themix.config")
 	if err != nil {
 		panic(err)
 	}
-
 	var configuration configpb.Configuration
 	err = prototext.Unmarshal(data, &configuration)
 	if err != nil {
 		panic(err)
 	}
-	node := themix.InitNode(configuration.Id, configuration.Batch, configuration.Peers)
+	node := themix.InitNode(uint32(*id), configuration.Batch, configuration.N, configuration.Peers)
 	node.Run()
 }
