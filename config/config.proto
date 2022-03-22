@@ -5,9 +5,10 @@ option go_package = "./configpb";
 
 message Configuration {
     // uint32 id = 1;
-    uint32 batch = 2;
-    uint32 n = 3;
-    repeated Peer peers = 4;
+    int32 batch = 2;
+    int32 n = 3;
+    int32 f = 4;
+    repeated Peer peers = 5;
 }
 
 message Peer {
