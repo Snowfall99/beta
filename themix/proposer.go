@@ -28,14 +28,16 @@ type server struct {
 }
 
 func (s *server) Post(ctx context.Context, req *clientpb.Request) (*clientpb.Response, error) {
+	log.Println("receive request")
 	s.reqc <- req
 	<-s.repc
+	log.Println("reply")
 	return &clientpb.Response{Ok: true}, nil
 }
 
 // Init verify pool for client message's signature verification
 // Setup http handler to receive client requests.
-func initProposer(batchsize uint32, client string, reqc chan *clientpb.Request, repc chan []byte, outputc chan *messagepb.Msg, id uint32) {
+func initProposer(batchsize int, client string, reqc chan *clientpb.Request, repc chan []byte, outputc chan *messagepb.Msg, id uint32) {
 	verifyReq := make(chan *clientpb.Payload, batchsize)
 	verifyResp := make(chan messagepb.VerifyResult)
 	proposer := &Proposer{
@@ -60,7 +62,7 @@ func initProposer(batchsize uint32, client string, reqc chan *clientpb.Request, 
 }
 
 func (proposer *Proposer) initVerifyPool() {
-	for i := 0; i < runtime.NumCPU()-1; i++ {
+	for i := 0; i < 2*runtime.NumCPU(); i++ {
 		go func() {
 			for {
 				req := <-proposer.verifyReq
@@ -103,14 +105,14 @@ func (proposer *Proposer) run() {
 			if err != nil {
 				log.Fatal("[proposer] proto.Marshal: ", err)
 			}
+			proposer.seq++
 			msg := &messagepb.Msg{
 				Type:     messagepb.MsgType_VAL,
 				Proposer: proposer.id,
 				Seq:      proposer.seq,
 				Content:  data,
 			}
-			log.Printf("[proposer] propose: proposer(%d), seq(%d), content(%d)\n", proposer.id, proposer.seq, msg.Content[0])
-			proposer.seq++
+			log.Printf("[proposer] propose: proposer(%d), seq(%d)\n", proposer.id, proposer.seq)
 			proposer.outputc <- msg
 		}
 	}
