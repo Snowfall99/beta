@@ -3,7 +3,22 @@ package messagepb;
 
 option go_package = "./messagepb";
 
-message Msg {}
+message Msg {
+    uint32 seq = 1;
+    uint32 from = 2;
+    uint32 proposer = 3;
+    uint32 round = 4;
+    MsgType type = 5;
+    bytes content = 6;
+}
+
+enum MsgType {
+    VAL = 0;
+    ECHO = 1;
+    READY = 2;
+    BVAL = 3;
+    AUX = 4;
+}
 
 enum VerifyResult {
     ACCEPT = 0;

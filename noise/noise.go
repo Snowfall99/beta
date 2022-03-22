@@ -2,7 +2,6 @@ package noise
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"strconv"
@@ -57,7 +56,7 @@ func InitNoise(id uint32, peersInfo map[uint32]string, inputc, outputc chan *mes
 		peers:   peers,
 		inputc:  inputc,
 		outputc: outputc}
-	fmt.Println("noiseNode addr: ", peersInfo[id])
+	log.Println("noiseNode addr:", peersInfo[id])
 	port, err := strconv.Atoi(strings.Split(peersInfo[id], ":")[1])
 	if err != nil {
 		log.Fatal("strconv.Atoi: ", err)
@@ -92,13 +91,11 @@ func (node *noiseNode) Handler(ctx noise.HandlerContext) error {
 
 func (node *noiseNode) onReceiveMessage(msg *messagepb.Msg) {
 	node.inputc <- msg
-	log.Print("noise: receive msg")
 }
 
 func (node *noiseNode) broadcast() {
 	for {
 		msg := <-node.outputc
-		log.Print("noise: broadcast msg from outputc")
 		for _, peer := range node.peers {
 			if peer != nil {
 				go node.sendMessage(peer.addr, msg)
