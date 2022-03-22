@@ -3,3 +3,4 @@
 *.config
 main
 .vscode/
+log/*
