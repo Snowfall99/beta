@@ -18,7 +18,7 @@ type instance struct {
 	f        int
 	proposal *messagepb.Msg
 	delta    int
-	delteBar int
+	deltaBar int
 	hasEcho  bool
 	numEcho  int
 	hasReady bool
@@ -27,7 +27,7 @@ type instance struct {
 	expireR  bool
 }
 
-func initInstance(msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh chan []byte, n, f int, id uint32) {
+func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh chan []byte) {
 	// TODO(chenzx): to be implemented.
 	inst := &instance{
 		msgc:     msgc,
@@ -36,6 +36,8 @@ func initInstance(msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideC
 		id:       id,
 		n:        n,
 		f:        f,
+		delta:    delta,
+		deltaBar: deltaBar,
 	}
 	go inst.run()
 }
@@ -61,7 +63,7 @@ func (inst *instance) run() {
 			if !inst.startR {
 				inst.startR = true
 				go func() {
-					time.Sleep(time.Duration(inst.delteBar) * time.Second)
+					time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
 					inst.expireR = true
 					if inst.numEcho >= inst.f+1 && !inst.hasReady {
 						inst.hasReady = true

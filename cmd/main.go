@@ -34,6 +34,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	node := themix.InitNode(uint32(*id), int(configuration.Batch), int(configuration.N), int(configuration.F), configuration.Peers)
+	node := themix.InitNode(uint32(*id), int(configuration.Batch), int(configuration.N), int(configuration.F), int(configuration.Delta), int(configuration.DeltaBar), configuration.Peers)
 	node.Run()
 }
