@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"themix.new.io/client/clientpb"
-	"themix.new.io/common/messagepb"
+	"themix.new.io/message/messagepb"
 )
 
 type Themix struct {

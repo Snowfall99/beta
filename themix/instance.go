@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"themix.new.io/common/messagepb"
+	"themix.new.io/message/messagepb"
 )
 
 type instance struct {

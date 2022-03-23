@@ -2,7 +2,7 @@ package themix
 
 import (
 	"themix.new.io/client/clientpb"
-	"themix.new.io/common/messagepb"
+	"themix.new.io/message/messagepb"
 )
 
 type ThemixQue struct {
