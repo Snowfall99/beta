@@ -12,14 +12,14 @@ type Node struct {
 	themixQue *ThemixQue
 }
 
-func InitNode(id uint32, batch, n, f int, peers []*configpb.Peer) *Node {
+func InitNode(id uint32, batch, n, f, delta, deltaBar int, peers []*configpb.Peer) *Node {
 	inputc := make(chan *messagepb.Msg)
 	outputc := make(chan *messagepb.Msg)
 	reqc := make(chan *clientpb.Request)
 	repc := make(chan []byte)
 	client := peers[id].Client
 	go initProposer(batch, client, reqc, repc, outputc, id)
-	themixQue := initThemixQue(inputc, outputc, reqc, repc, n, f, id)
+	themixQue := initThemixQue(id, n, f, delta, deltaBar, inputc, outputc, reqc, repc)
 	peerInfo := make(map[uint32]string)
 	for _, peer := range peers {
 		peerInfo[peer.Id] = peer.Addr

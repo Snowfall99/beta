@@ -18,11 +18,13 @@ type Themix struct {
 	id       uint32
 	n        int
 	f        int
+	delta    int
+	deltaBar int
 	decided  int
 	proposed bool
 }
 
-func initThemix(inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, n, f int, id uint32) *Themix {
+func initThemix(id uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte) *Themix {
 	decideCh := make(chan []byte)
 	themix := &Themix{
 		inputc:   inputc,
@@ -34,11 +36,13 @@ func initThemix(inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc ch
 		id:       id,
 		n:        n,
 		f:        f,
+		delta:    delta,
+		deltaBar: deltaBar,
 	}
 	for i := 0; i < int(n); i++ {
 		msgc := make(chan *messagepb.Msg)
 		themix.msgc[uint32(i)] = msgc
-		go initInstance(msgc, outputc, decideCh, n, f, uint32(i))
+		go initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, decideCh)
 	}
 	return themix
 }

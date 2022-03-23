@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	addr = flag.String("addr", "localhost:11200", "address of the themix Node")
+	addr   = flag.String("addr", "localhost:11200", "address of the themix Node")
+	number = flag.Int("num", 1, "number of requests")
 )
 
 func main() {
@@ -27,9 +28,11 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	resp, err := client.Post(ctx, &clientpb.Request{})
-	if err != nil {
-		log.Fatal("client.Post: ", err)
+	for i := 0; i < *number; i++ {
+		resp, err := client.Post(ctx, &clientpb.Request{})
+		if err != nil {
+			log.Fatal("client.Post: ", err)
+		}
+		log.Println("resp: ", resp.GetOk())
 	}
-	log.Println("resp: ", resp.GetOk())
 }
