@@ -27,7 +27,7 @@ type instance struct {
 	expireR  bool
 }
 
-func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh chan []byte) {
+func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh chan []byte) *instance {
 	// TODO(chenzx): to be implemented.
 	inst := &instance{
 		msgc:     msgc,
@@ -40,6 +40,7 @@ func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg
 		deltaBar: deltaBar,
 	}
 	go inst.run()
+	return inst
 }
 
 func (inst *instance) run() {

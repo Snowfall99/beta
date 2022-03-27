@@ -8,41 +8,42 @@ import (
 )
 
 type Themix struct {
-	// TODO(chenzx): To be implemented.
-	inputc   chan *messagepb.Msg
-	outputc  chan *messagepb.Msg
-	msgc     map[uint32]chan *messagepb.Msg
-	reqc     chan *clientpb.Request
-	repc     chan []byte
-	decideCh chan []byte
-	id       uint32
-	n        int
-	f        int
-	delta    int
-	deltaBar int
-	decided  int
-	proposed bool
+	inputc    chan *messagepb.Msg
+	outputc   chan *messagepb.Msg
+	msgc      map[uint32]chan *messagepb.Msg
+	reqc      chan *clientpb.Request
+	repc      chan []byte
+	decideCh  chan []byte
+	instances []*instance
+	id        uint32
+	n         int
+	f         int
+	delta     int
+	deltaBar  int
+	decided   int
+	proposed  bool
 }
 
 func initThemix(id uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte) *Themix {
 	decideCh := make(chan []byte)
 	themix := &Themix{
-		inputc:   inputc,
-		outputc:  outputc,
-		reqc:     reqc,
-		repc:     repc,
-		decideCh: decideCh,
-		msgc:     make(map[uint32]chan *messagepb.Msg),
-		id:       id,
-		n:        n,
-		f:        f,
-		delta:    delta,
-		deltaBar: deltaBar,
+		inputc:    inputc,
+		outputc:   outputc,
+		reqc:      reqc,
+		repc:      repc,
+		decideCh:  decideCh,
+		msgc:      make(map[uint32]chan *messagepb.Msg),
+		instances: make([]*instance, n),
+		id:        id,
+		n:         n,
+		f:         f,
+		delta:     delta,
+		deltaBar:  deltaBar,
 	}
 	for i := 0; i < int(n); i++ {
 		msgc := make(chan *messagepb.Msg)
 		themix.msgc[uint32(i)] = msgc
-		go initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, decideCh)
+		themix.instances[i] = initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, decideCh)
 	}
 	return themix
 }
