@@ -14,6 +14,7 @@ type Themix struct {
 	reqc      chan *clientpb.Request
 	repc      chan []byte
 	decideCh  chan []byte
+	finishCh  chan []byte
 	instances []*instance
 	id        uint32
 	n         int
@@ -32,6 +33,7 @@ func initThemix(id uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg
 		reqc:      reqc,
 		repc:      repc,
 		decideCh:  decideCh,
+		finishCh:  make(chan []byte),
 		msgc:      make(map[uint32]chan *messagepb.Msg),
 		instances: make([]*instance, n),
 		id:        id,
@@ -59,22 +61,27 @@ func (themix *Themix) run() {
 					themix.reqc <- &clientpb.Request{}
 				}
 			} else if themix.decided == themix.n {
-				themix.repc <- []byte{}
+				if themix.proposed {
+					themix.repc <- []byte{}
+				}
 				themix.reqc = nil
 				themix.repc = nil
+				themix.finishCh <- []byte{}
 				break
 			}
 		}
 	}()
 	for {
-		msg := <-themix.inputc
-		if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id {
-			themix.proposed = true
+		select {
+		case msg := <-themix.inputc:
+			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
+				themix.proposed = true
+			}
+			themix.msgc[msg.Proposer] <- msg
+		case <-themix.finishCh:
+			log.Printf("themix %d finish", themix.id)
+			// TODO(chenzx): send a tombstone to themix queue and set this themix slot to nil
+			break
 		}
-		// TODO(chenzx): this thread should exit after decide listen thread
-		// if themix.decided == themix.n {
-		// 	break
-		// }
-		themix.msgc[msg.Proposer] <- msg
 	}
 }
