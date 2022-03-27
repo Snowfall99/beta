@@ -1,6 +1,8 @@
 *.sum
 *.pb.go
 *.config
+*.bak
 main
+client
 .vscode/
 log/*
