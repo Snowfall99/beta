@@ -15,7 +15,9 @@ type Themix struct {
 	repc      chan []byte
 	decideCh  chan []byte
 	finishCh  chan []byte
+	statusCh  chan uint32
 	instances []*instance
+	seq       uint32
 	id        uint32
 	n         int
 	f         int
@@ -25,17 +27,19 @@ type Themix struct {
 	proposed  bool
 }
 
-func initThemix(id uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte) *Themix {
-	decideCh := make(chan []byte)
+func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
+	decideCh := make(chan []byte, n)
 	themix := &Themix{
 		inputc:    inputc,
 		outputc:   outputc,
 		reqc:      reqc,
 		repc:      repc,
 		decideCh:  decideCh,
+		statusCh:  statusCh,
 		finishCh:  make(chan []byte),
 		msgc:      make(map[uint32]chan *messagepb.Msg),
 		instances: make([]*instance, n),
+		seq:       seq,
 		id:        id,
 		n:         n,
 		f:         f,
@@ -51,9 +55,14 @@ func initThemix(id uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg
 }
 
 func (themix *Themix) run() {
-	go func() {
-		for {
-			<-themix.decideCh
+	for {
+		select {
+		case msg := <-themix.inputc:
+			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
+				themix.proposed = true
+			}
+			themix.msgc[msg.Proposer] <- msg
+		case <-themix.decideCh:
 			themix.decided++
 			log.Println("themix decide number: ", themix.decided)
 			if themix.decided == 1 {
@@ -66,22 +75,9 @@ func (themix *Themix) run() {
 				}
 				themix.reqc = nil
 				themix.repc = nil
-				themix.finishCh <- []byte{}
-				break
+				themix.statusCh <- themix.seq
+				return
 			}
-		}
-	}()
-	for {
-		select {
-		case msg := <-themix.inputc:
-			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
-				themix.proposed = true
-			}
-			themix.msgc[msg.Proposer] <- msg
-		case <-themix.finishCh:
-			log.Printf("themix %d finish", themix.id)
-			// TODO(chenzx): send a tombstone to themix queue and set this themix slot to nil
-			break
 		}
 	}
 }
