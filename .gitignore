@@ -2,6 +2,7 @@
 *.pb.go
 *.config
 *.bak
+*.log
 main
 client
 .vscode/
