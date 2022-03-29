@@ -2,8 +2,8 @@ package themix
 
 import (
 	"themix.new.io/client/clientpb"
-	"themix.new.io/common/messagepb"
 	"themix.new.io/config/configpb"
+	"themix.new.io/message/messagepb"
 	"themix.new.io/noise"
 )
 

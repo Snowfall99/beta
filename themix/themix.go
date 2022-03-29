@@ -4,53 +4,66 @@ import (
 	"log"
 
 	"themix.new.io/client/clientpb"
-	"themix.new.io/common/messagepb"
+	"themix.new.io/message/messagepb"
 )
 
 type Themix struct {
-	// TODO(chenzx): To be implemented.
-	inputc   chan *messagepb.Msg
-	outputc  chan *messagepb.Msg
-	msgc     map[uint32]chan *messagepb.Msg
-	reqc     chan *clientpb.Request
-	repc     chan []byte
-	decideCh chan []byte
-	id       uint32
-	n        int
-	f        int
-	delta    int
-	deltaBar int
-	decided  int
-	proposed bool
+	inputc    chan *messagepb.Msg
+	outputc   chan *messagepb.Msg
+	msgc      map[uint32]chan *messagepb.Msg
+	finishCh  map[uint32]chan []byte
+	reqc      chan *clientpb.Request
+	repc      chan []byte
+	decideCh  chan []byte
+	statusCh  chan uint32
+	instances []*instance
+	seq       uint32
+	id        uint32
+	n         int
+	f         int
+	delta     int
+	deltaBar  int
+	decided   int
+	proposed  bool
 }
 
-func initThemix(id uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte) *Themix {
-	decideCh := make(chan []byte)
+func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
 	themix := &Themix{
-		inputc:   inputc,
-		outputc:  outputc,
-		reqc:     reqc,
-		repc:     repc,
-		decideCh: decideCh,
-		msgc:     make(map[uint32]chan *messagepb.Msg),
-		id:       id,
-		n:        n,
-		f:        f,
-		delta:    delta,
-		deltaBar: deltaBar,
+		inputc:    inputc,
+		outputc:   outputc,
+		reqc:      reqc,
+		repc:      repc,
+		statusCh:  statusCh,
+		decideCh:  make(chan []byte, n),
+		finishCh:  make(map[uint32]chan []byte),
+		msgc:      make(map[uint32]chan *messagepb.Msg),
+		instances: make([]*instance, n),
+		seq:       seq,
+		id:        id,
+		n:         n,
+		f:         f,
+		delta:     delta,
+		deltaBar:  deltaBar,
 	}
 	for i := 0; i < int(n); i++ {
-		msgc := make(chan *messagepb.Msg)
+		msgc := make(chan *messagepb.Msg, BUFFER)
+		finishCh := make(chan []byte)
+		themix.finishCh[uint32(i)] = finishCh
 		themix.msgc[uint32(i)] = msgc
-		go initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, decideCh)
+		themix.instances[i] = initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, themix.decideCh, finishCh)
 	}
 	return themix
 }
 
 func (themix *Themix) run() {
-	go func() {
-		for {
-			<-themix.decideCh
+	for {
+		select {
+		case msg := <-themix.inputc:
+			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
+				themix.proposed = true
+			}
+			themix.msgc[msg.Proposer] <- msg
+		case <-themix.decideCh:
 			themix.decided++
 			log.Println("themix decide number: ", themix.decided)
 			if themix.decided == 1 {
@@ -58,22 +71,17 @@ func (themix *Themix) run() {
 					themix.reqc <- &clientpb.Request{}
 				}
 			} else if themix.decided == themix.n {
-				themix.repc <- []byte{}
+				if themix.proposed {
+					themix.repc <- []byte{}
+				}
 				themix.reqc = nil
 				themix.repc = nil
-				break
+				themix.statusCh <- themix.seq
+				for i := 0; i < themix.n; i++ {
+					themix.finishCh[uint32(i)] <- []byte{}
+				}
+				return
 			}
 		}
-	}()
-	for {
-		msg := <-themix.inputc
-		if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id {
-			themix.proposed = true
-		}
-		// TODO(chenzx): this thread should exit after decide listen thread
-		// if themix.decided == themix.n {
-		// 	break
-		// }
-		themix.msgc[msg.Proposer] <- msg
 	}
 }

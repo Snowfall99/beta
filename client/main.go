@@ -25,11 +25,11 @@ func main() {
 	defer conn.Close()
 
 	client := clientpb.NewThemixClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	for i := 0; i < *number; i++ {
-		resp, err := client.Post(ctx, &clientpb.Request{})
+		resp, err := client.Post(ctx, &clientpb.Request{Payload: []*clientpb.Payload{{Payload: "a"}}})
 		if err != nil {
 			log.Fatal("client.Post: ", err)
 		}

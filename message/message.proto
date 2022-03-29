@@ -18,6 +18,7 @@ enum MsgType {
     READY = 2;
     BVAL = 3;
     AUX = 4;
+    COIN = 5;
 }
 
 enum VerifyResult {

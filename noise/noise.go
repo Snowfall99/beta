@@ -9,7 +9,7 @@ import (
 
 	"github.com/perlin-network/noise"
 	"google.golang.org/protobuf/proto"
-	"themix.new.io/common/messagepb"
+	"themix.new.io/message/messagepb"
 )
 
 type peer struct {
