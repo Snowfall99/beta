@@ -11,10 +11,10 @@ type Themix struct {
 	inputc    chan *messagepb.Msg
 	outputc   chan *messagepb.Msg
 	msgc      map[uint32]chan *messagepb.Msg
+	finishCh  map[uint32]chan []byte
 	reqc      chan *clientpb.Request
 	repc      chan []byte
 	decideCh  chan []byte
-	finishCh  chan []byte
 	statusCh  chan uint32
 	instances []*instance
 	seq       uint32
@@ -28,15 +28,14 @@ type Themix struct {
 }
 
 func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
-	decideCh := make(chan []byte, n)
 	themix := &Themix{
 		inputc:    inputc,
 		outputc:   outputc,
 		reqc:      reqc,
 		repc:      repc,
-		decideCh:  decideCh,
 		statusCh:  statusCh,
-		finishCh:  make(chan []byte),
+		decideCh:  make(chan []byte, n),
+		finishCh:  make(map[uint32]chan []byte),
 		msgc:      make(map[uint32]chan *messagepb.Msg),
 		instances: make([]*instance, n),
 		seq:       seq,
@@ -47,9 +46,11 @@ func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagep
 		deltaBar:  deltaBar,
 	}
 	for i := 0; i < int(n); i++ {
-		msgc := make(chan *messagepb.Msg)
+		msgc := make(chan *messagepb.Msg, BUFFER)
+		finishCh := make(chan []byte)
+		themix.finishCh[uint32(i)] = finishCh
 		themix.msgc[uint32(i)] = msgc
-		themix.instances[i] = initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, decideCh)
+		themix.instances[i] = initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, themix.decideCh, finishCh)
 	}
 	return themix
 }
@@ -76,6 +77,9 @@ func (themix *Themix) run() {
 				themix.reqc = nil
 				themix.repc = nil
 				themix.statusCh <- themix.seq
+				for i := 0; i < themix.n; i++ {
+					themix.finishCh[uint32(i)] <- []byte{}
+				}
 				return
 			}
 		}

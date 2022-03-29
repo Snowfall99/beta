@@ -15,6 +15,7 @@ type instance struct {
 	msgc         chan *messagepb.Msg
 	outputc      chan *messagepb.Msg
 	decideCh     chan []byte
+	finishCh     chan []byte
 	id           uint32
 	n            int
 	f            int
@@ -44,11 +45,12 @@ type instance struct {
 	expireB      []bool
 }
 
-func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh chan []byte) *instance {
+func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh, finishCh chan []byte) *instance {
 	inst := &instance{
 		msgc:         msgc,
 		outputc:      outputc,
 		decideCh:     decideCh,
+		finishCh:     finishCh,
 		id:           id,
 		n:            n,
 		f:            f,
@@ -74,155 +76,123 @@ func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg
 
 func (inst *instance) run() {
 	for {
-		msg := <-inst.msgc
-		log.Printf("msg Type(%d), Proposer(%d), Seq(%d), From(%d)\n", msg.Type, msg.Proposer, msg.Seq, msg.From)
-		switch msg.Type {
-		case messagepb.MsgType_VAL:
-			inst.proposal = msg
-			if !inst.hasEcho {
-				inst.hasEcho = true
+		select {
+		case msg := <-inst.msgc:
+			log.Printf("msg Type(%d), Proposer(%d), Seq(%d), From(%d)\n", msg.Type, msg.Proposer, msg.Seq, msg.From)
+			inst.handleMsg(msg)
+		case <-inst.finishCh:
+			return
+		}
+	}
+}
+
+func (inst *instance) handleMsg(msg *messagepb.Msg) {
+	switch msg.Type {
+	case messagepb.MsgType_VAL:
+		inst.proposal = msg
+		if !inst.hasEcho {
+			inst.hasEcho = true
+			m := &messagepb.Msg{
+				Type:     messagepb.MsgType_ECHO,
+				From:     inst.id,
+				Proposer: msg.Proposer,
+				Seq:      msg.Seq,
+				Content:  msg.Content,
+			}
+			inst.outputc <- m
+		}
+		if !inst.startR {
+			inst.startR = true
+			go func() {
+				time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
+				inst.expireR = true
+				if inst.numEcho >= inst.f+1 && !inst.hasReady {
+					inst.hasReady = true
+					m := &messagepb.Msg{
+						Type:     messagepb.MsgType_READY,
+						From:     inst.id,
+						Proposer: msg.Proposer,
+						Seq:      msg.Seq,
+						Content:  msg.Content,
+					}
+					inst.outputc <- m
+				}
+			}()
+		}
+	case messagepb.MsgType_ECHO:
+		inst.numEcho++
+		if inst.numEcho >= inst.f+1 && inst.expireR && !inst.hasReady {
+			inst.hasReady = true
+			m := &messagepb.Msg{
+				Type:     messagepb.MsgType_READY,
+				From:     inst.id,
+				Proposer: msg.Proposer,
+				Seq:      msg.Seq,
+				Content:  msg.Content,
+			}
+			inst.outputc <- m
+		}
+	case messagepb.MsgType_READY:
+		inst.numReady++
+		if inst.numReady == inst.f+1 {
+			m := &messagepb.Msg{
+				Type:     messagepb.MsgType_BVAL,
+				From:     inst.id,
+				Proposer: msg.Proposer,
+				Seq:      msg.Seq,
+				Content:  []byte{1},
+			}
+			inst.outputc <- m
+		}
+	case messagepb.MsgType_BVAL:
+		switch msg.Content[0] {
+		case 0:
+			inst.numBvalZero[msg.Round]++
+		case 1:
+			inst.numBvalOne[msg.Round]++
+		}
+		if msg.Content[0] == 0 && inst.round == int(msg.Round) && inst.numBvalZero[inst.round] >= inst.f+1 && !inst.zeroEndorsed[inst.round] {
+			inst.zeroEndorsed[inst.round] = true
+			// TODO(chenzx): broadcast f+1 BVAL(b, r)
+			if !inst.hasSentAux[inst.round] {
+				inst.hasSentAux[inst.round] = true
 				m := &messagepb.Msg{
-					Type:     messagepb.MsgType_ECHO,
+					Type:     messagepb.MsgType_AUX,
 					From:     inst.id,
 					Proposer: msg.Proposer,
 					Seq:      msg.Seq,
-					Content:  msg.Content,
+					Round:    msg.Round,
+					Content:  []byte{0},
 				}
 				inst.outputc <- m
-			}
-			if !inst.startR {
-				inst.startR = true
-				go func() {
-					time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
-					inst.expireR = true
-					if inst.numEcho >= inst.f+1 && !inst.hasReady {
-						inst.hasReady = true
-						m := &messagepb.Msg{
-							Type:     messagepb.MsgType_READY,
-							From:     inst.id,
-							Proposer: msg.Proposer,
-							Seq:      msg.Seq,
-							Content:  msg.Content,
+				if !inst.startB[inst.round] {
+					inst.startB[inst.round] = true
+					go func() {
+						time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
+						inst.expireB[inst.round] = true
+						if inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 && !inst.hasSentCoin[inst.round] {
+							inst.hasSentCoin[inst.round] = true
+							m := &messagepb.Msg{
+								Type:     messagepb.MsgType_COIN,
+								From:     inst.id,
+								Proposer: msg.Proposer,
+								Seq:      msg.Seq,
+								Round:    msg.Round,
+								Content:  []byte{1},
+							}
+							inst.outputc <- m
 						}
-						inst.outputc <- m
-					}
-				}()
+					}()
+				}
 			}
-		case messagepb.MsgType_ECHO:
-			inst.numEcho++
-			if inst.numEcho >= inst.f+1 && inst.expireR && !inst.hasReady {
-				inst.hasReady = true
+		}
+		if msg.Content[0] == 1 && inst.round == int(msg.Round) && inst.numBvalOne[inst.round] >= inst.f+1 && !inst.oneEndorsed[inst.round] {
+			inst.oneEndorsed[inst.round] = true
+			// TODO(chenzx): broadcast f+1 BVAL(b, r)
+			if !inst.hasSentAux[inst.round] {
+				inst.hasSentAux[inst.round] = true
 				m := &messagepb.Msg{
-					Type:     messagepb.MsgType_READY,
-					From:     inst.id,
-					Proposer: msg.Proposer,
-					Seq:      msg.Seq,
-					Content:  msg.Content,
-				}
-				inst.outputc <- m
-			}
-		case messagepb.MsgType_READY:
-			inst.numReady++
-			if inst.numReady == inst.f+1 {
-				m := &messagepb.Msg{
-					Type:     messagepb.MsgType_BVAL,
-					From:     inst.id,
-					Proposer: msg.Proposer,
-					Seq:      msg.Seq,
-					Content:  []byte{1},
-				}
-				inst.outputc <- m
-			}
-		case messagepb.MsgType_BVAL:
-			switch msg.Content[0] {
-			case 0:
-				inst.numBvalZero[msg.Round]++
-			case 1:
-				inst.numBvalOne[msg.Round]++
-			}
-			if msg.Content[0] == 0 && inst.round == int(msg.Round) && inst.numBvalZero[inst.round] >= inst.f+1 && !inst.zeroEndorsed[inst.round] {
-				inst.zeroEndorsed[inst.round] = true
-				// TODO(chenzx): broadcast f+1 BVAL(b, r)
-				if !inst.hasSentAux[inst.round] {
-					inst.hasSentAux[inst.round] = true
-					m := &messagepb.Msg{
-						Type:     messagepb.MsgType_AUX,
-						From:     inst.id,
-						Proposer: msg.Proposer,
-						Seq:      msg.Seq,
-						Round:    msg.Round,
-						Content:  []byte{0},
-					}
-					inst.outputc <- m
-					if !inst.startB[inst.round] {
-						inst.startB[inst.round] = true
-						go func() {
-							time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
-							inst.expireB[inst.round] = true
-							if inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 && !inst.hasSentCoin[inst.round] {
-								inst.hasSentCoin[inst.round] = true
-								m := &messagepb.Msg{
-									Type:     messagepb.MsgType_COIN,
-									From:     inst.id,
-									Proposer: msg.Proposer,
-									Seq:      msg.Seq,
-									Round:    msg.Round,
-									Content:  []byte{1},
-								}
-								inst.outputc <- m
-							}
-						}()
-					}
-				}
-			}
-			if msg.Content[0] == 1 && inst.round == int(msg.Round) && inst.numBvalOne[inst.round] >= inst.f+1 && !inst.oneEndorsed[inst.round] {
-				inst.oneEndorsed[inst.round] = true
-				// TODO(chenzx): broadcast f+1 BVAL(b, r)
-				if !inst.hasSentAux[inst.round] {
-					inst.hasSentAux[inst.round] = true
-					m := &messagepb.Msg{
-						Type:     messagepb.MsgType_AUX,
-						From:     inst.id,
-						Proposer: msg.Proposer,
-						Seq:      msg.Seq,
-						Round:    msg.Round,
-						Content:  []byte{1},
-					}
-					inst.outputc <- m
-					if !inst.startB[inst.round] {
-						inst.startB[inst.round] = true
-						go func() {
-							time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
-							inst.expireB[inst.round] = true
-							if inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 && !inst.hasSentCoin[inst.round] {
-								inst.hasSentCoin[inst.round] = true
-								m := &messagepb.Msg{
-									Type:     messagepb.MsgType_COIN,
-									From:     inst.id,
-									Proposer: msg.Proposer,
-									Seq:      msg.Seq,
-									Round:    msg.Round,
-									Content:  []byte{1},
-								}
-								inst.outputc <- m
-							}
-						}()
-					}
-				}
-			}
-		case messagepb.MsgType_AUX:
-			switch msg.Content[0] {
-			case 0:
-				inst.numAuxZero[msg.Round]++
-			case 1:
-				inst.numAuxOne[msg.Round]++
-			}
-			if inst.round == int(msg.Round) && inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 &&
-				inst.expireB[inst.round] && !inst.hasSentCoin[inst.round] {
-				//TODO(chenzx): to be fulfilled
-				inst.hasSentCoin[inst.round] = true
-				m := &messagepb.Msg{
-					Type:     messagepb.MsgType_COIN,
+					Type:     messagepb.MsgType_AUX,
 					From:     inst.id,
 					Proposer: msg.Proposer,
 					Seq:      msg.Seq,
@@ -230,14 +200,54 @@ func (inst *instance) run() {
 					Content:  []byte{1},
 				}
 				inst.outputc <- m
+				if !inst.startB[inst.round] {
+					inst.startB[inst.round] = true
+					go func() {
+						time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
+						inst.expireB[inst.round] = true
+						if inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 && !inst.hasSentCoin[inst.round] {
+							inst.hasSentCoin[inst.round] = true
+							m := &messagepb.Msg{
+								Type:     messagepb.MsgType_COIN,
+								From:     inst.id,
+								Proposer: msg.Proposer,
+								Seq:      msg.Seq,
+								Round:    msg.Round,
+								Content:  []byte{1},
+							}
+							inst.outputc <- m
+						}
+					}()
+				}
 			}
-		case messagepb.MsgType_COIN:
-			inst.numCoin[msg.Round]++
-			if inst.round == int(msg.Round) && inst.numCoin[inst.round] >= inst.f+1 && !inst.decided {
-				inst.decided = true
-				// coin := 1
-				inst.decideCh <- []byte{}
+		}
+	case messagepb.MsgType_AUX:
+		switch msg.Content[0] {
+		case 0:
+			inst.numAuxZero[msg.Round]++
+		case 1:
+			inst.numAuxOne[msg.Round]++
+		}
+		if inst.round == int(msg.Round) && inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 &&
+			inst.expireB[inst.round] && !inst.hasSentCoin[inst.round] {
+			//TODO(chenzx): to be fulfilled
+			inst.hasSentCoin[inst.round] = true
+			m := &messagepb.Msg{
+				Type:     messagepb.MsgType_COIN,
+				From:     inst.id,
+				Proposer: msg.Proposer,
+				Seq:      msg.Seq,
+				Round:    msg.Round,
+				Content:  []byte{1},
 			}
+			inst.outputc <- m
+		}
+	case messagepb.MsgType_COIN:
+		inst.numCoin[msg.Round]++
+		if inst.round == int(msg.Round) && inst.numCoin[inst.round] >= inst.f+1 && !inst.decided {
+			inst.decided = true
+			// coin := 1
+			inst.decideCh <- []byte{}
 		}
 	}
 }
