@@ -19,6 +19,7 @@ enum MsgType {
     BVAL = 3;
     AUX = 4;
     COIN = 5;
+    CANVOTEZERO = 6;
 }
 
 enum VerifyResult {

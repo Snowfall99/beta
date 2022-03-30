@@ -290,5 +290,18 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			// coin := 1
 			inst.decideCh <- []byte{}
 		}
+	case messagepb.MsgType_CANVOTEZERO:
+		if inst.round == 0 && !inst.bvalZero[inst.round] && !inst.bvalOne[inst.round] {
+			inst.bvalZero[inst.round] = true
+			m := &messagepb.Msg{
+				Type:     messagepb.MsgType_BVAL,
+				From:     inst.id,
+				Proposer: inst.id,
+				Seq:      msg.Seq,
+				Round:    uint32(inst.round),
+				Content:  []byte{0},
+			}
+			inst.outputc <- m
+		}
 	}
 }

@@ -108,6 +108,6 @@ func (node *noiseNode) sendMessage(addr string, msg *messagepb.Msg) {
 	m := noiseMessage{Msg: msg}
 	err := node.node.SendMessage(context.TODO(), addr, m)
 	if err != nil {
-		log.Fatal("node.node.SendMessage: ", err)
+		log.Println("node.node.SendMessage: ", err)
 	}
 }

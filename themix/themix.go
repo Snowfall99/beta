@@ -70,6 +70,14 @@ func (themix *Themix) run() {
 				if !themix.proposed {
 					themix.reqc <- &clientpb.Request{}
 				}
+			} else if themix.decided == themix.n-themix.f {
+				m := &messagepb.Msg{
+					Type: messagepb.MsgType_CANVOTEZERO,
+					Seq:  themix.seq,
+				}
+				for i := 0; i < themix.n; i++ {
+					themix.msgc[uint32(i)] <- m
+				}
 			} else if themix.decided == themix.n {
 				if themix.proposed {
 					themix.repc <- []byte{}

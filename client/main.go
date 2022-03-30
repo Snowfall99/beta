@@ -25,7 +25,7 @@ func main() {
 	defer conn.Close()
 
 	client := clientpb.NewThemixClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	for i := 0; i < *number; i++ {
