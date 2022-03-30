@@ -133,6 +133,18 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 				}
 			}()
 		}
+		if inst.numReady >= inst.f+1 && inst.round == 0 &&
+			!inst.bvalOne[inst.round] && inst.proposal != nil {
+			inst.bvalOne[inst.round] = true
+			m := &messagepb.Msg{
+				Type:     messagepb.MsgType_BVAL,
+				From:     inst.id,
+				Proposer: msg.Proposer,
+				Seq:      msg.Seq,
+				Content:  []byte{1},
+			}
+			inst.outputc <- m
+		}
 	case messagepb.MsgType_ECHO:
 		if inst.digest == nil {
 			inst.digest = msg.Content
