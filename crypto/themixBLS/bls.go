@@ -1,7 +1,6 @@
 package themixBLS
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"path/filepath"
@@ -89,7 +88,7 @@ func (blsSig *BlsSig) Sign(msg []byte) []byte {
 	suite := bn256.NewSuite()
 	sig, err := tbls.Sign(suite, blsSig.prikey, msg)
 	if err != nil {
-		fmt.Println("Error when tbls sign: ", err)
+		log.Fatal("bls.Sign: ", err)
 	}
 	return sig
 }
@@ -99,11 +98,11 @@ func (blsSig *BlsSig) Recover(msg []byte, sigShares [][]byte, t int, n int) []by
 	suite := bn256.NewSuite()
 	sig, err := tbls.Recover(suite, blsSig.pubkey, msg, sigShares[0:t], t, n)
 	if err != nil {
-		log.Fatal("Fatal: error when tbls recover: ", err)
+		log.Fatal("bls.Recover: ", err)
 	}
 	err = bls.Verify(suite, blsSig.pubkey.Commit(), msg, sig)
 	if err != nil {
-		log.Panic("Error when tbls verify: ", err)
+		log.Fatal("bls.Verify: ", err)
 	}
 	return sig
 }
