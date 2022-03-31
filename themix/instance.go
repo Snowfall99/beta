@@ -2,10 +2,12 @@ package themix
 
 import (
 	"bytes"
+	"encoding/binary"
 	"log"
 	"time"
 
 	"themix.new.io/crypto/sha256"
+	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/message/messagepb"
 )
 
@@ -19,12 +21,16 @@ type instance struct {
 	decideCh     chan []byte
 	finishCh     chan []byte
 	id           uint32
+	proposer     uint32
+	sequence     uint32
+	blsSig       *bls.BlsSig
 	n            int
 	f            int
 	round        int
 	decided      bool
 	proposal     *messagepb.Msg
 	digest       []byte
+	binVals      uint8
 	delta        int
 	deltaBar     int
 	hasEcho      bool
@@ -42,19 +48,23 @@ type instance struct {
 	numAuxOne    []int
 	numCoin      []int
 	hasSentCoin  []bool
+	coinMsgs     [][]*messagepb.Msg
 	startR       bool
 	expireR      bool
 	startB       []bool
 	expireB      []bool
 }
 
-func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh, finishCh chan []byte) *instance {
+func initInstance(id, proposer, sequence uint32, n, f, delta, deltaBar int, blsSig *bls.BlsSig, msgc chan *messagepb.Msg, outputc chan *messagepb.Msg, decideCh, finishCh chan []byte) *instance {
 	inst := &instance{
 		msgc:         msgc,
 		outputc:      outputc,
 		decideCh:     decideCh,
 		finishCh:     finishCh,
 		id:           id,
+		proposer:     proposer,
+		sequence:     sequence,
+		blsSig:       blsSig,
 		n:            n,
 		f:            f,
 		delta:        delta,
@@ -70,8 +80,12 @@ func initInstance(id uint32, n, f, delta, deltaBar int, msgc chan *messagepb.Msg
 		numAuxOne:    make([]int, maxround),
 		numCoin:      make([]int, maxround),
 		hasSentCoin:  make([]bool, maxround),
+		coinMsgs:     make([][]*messagepb.Msg, maxround),
 		startB:       make([]bool, maxround),
 		expireB:      make([]bool, maxround),
+	}
+	for i := 0; i < maxround; i++ {
+		inst.coinMsgs[i] = make([]*messagepb.Msg, n)
 	}
 	go inst.run()
 	return inst
@@ -81,7 +95,7 @@ func (inst *instance) run() {
 	for {
 		select {
 		case msg := <-inst.msgc:
-			log.Printf("msg Type(%d), Proposer(%d), Seq(%d), From(%d)\n", msg.Type, msg.Proposer, msg.Seq, msg.From)
+			log.Printf("ID(%d), msg Type(%d), Proposer(%d), Seq(%d), From(%d), Round(%d)\n", inst.id, msg.Type, msg.Proposer, msg.Seq, msg.From, msg.Round)
 			inst.handleMsg(msg)
 		case <-inst.finishCh:
 			return
@@ -108,7 +122,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			inst.hasEcho = true
 			m := &messagepb.Msg{
 				Type:     messagepb.MsgType_ECHO,
-				From:     inst.id,
 				Proposer: msg.Proposer,
 				Seq:      msg.Seq,
 				Content:  digest,
@@ -124,7 +137,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 					inst.hasReady = true
 					m := &messagepb.Msg{
 						Type:     messagepb.MsgType_READY,
-						From:     inst.id,
 						Proposer: msg.Proposer,
 						Seq:      msg.Seq,
 						Content:  msg.Content,
@@ -138,7 +150,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			inst.bvalOne[inst.round] = true
 			m := &messagepb.Msg{
 				Type:     messagepb.MsgType_BVAL,
-				From:     inst.id,
 				Proposer: msg.Proposer,
 				Seq:      msg.Seq,
 				Content:  []byte{1},
@@ -156,7 +167,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			inst.hasReady = true
 			m := &messagepb.Msg{
 				Type:     messagepb.MsgType_READY,
-				From:     inst.id,
 				Proposer: msg.Proposer,
 				Seq:      msg.Seq,
 				Content:  msg.Content,
@@ -170,7 +180,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			inst.bvalOne[inst.round] = true
 			m := &messagepb.Msg{
 				Type:     messagepb.MsgType_BVAL,
-				From:     inst.id,
 				Proposer: msg.Proposer,
 				Seq:      msg.Seq,
 				Content:  []byte{1},
@@ -193,7 +202,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 				inst.hasSentAux[inst.round] = true
 				m := &messagepb.Msg{
 					Type:     messagepb.MsgType_AUX,
-					From:     inst.id,
 					Proposer: msg.Proposer,
 					Seq:      msg.Seq,
 					Round:    msg.Round,
@@ -205,19 +213,7 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 					go func() {
 						time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
 						inst.expireB[inst.round] = true
-						if inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 &&
-							!inst.hasSentCoin[inst.round] {
-							inst.hasSentCoin[inst.round] = true
-							m := &messagepb.Msg{
-								Type:     messagepb.MsgType_COIN,
-								From:     inst.id,
-								Proposer: msg.Proposer,
-								Seq:      msg.Seq,
-								Round:    msg.Round,
-								Content:  []byte{1},
-							}
-							inst.outputc <- m
-						}
+						inst.sendCoin()
 					}()
 				}
 			}
@@ -231,7 +227,6 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 				inst.hasSentAux[inst.round] = true
 				m := &messagepb.Msg{
 					Type:     messagepb.MsgType_AUX,
-					From:     inst.id,
 					Proposer: msg.Proposer,
 					Seq:      msg.Seq,
 					Round:    msg.Round,
@@ -243,19 +238,7 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 					go func() {
 						time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
 						inst.expireB[inst.round] = true
-						if inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 &&
-							!inst.hasSentCoin[inst.round] {
-							inst.hasSentCoin[inst.round] = true
-							m := &messagepb.Msg{
-								Type:     messagepb.MsgType_COIN,
-								From:     inst.id,
-								Proposer: msg.Proposer,
-								Seq:      msg.Seq,
-								Round:    msg.Round,
-								Content:  []byte{1},
-							}
-							inst.outputc <- m
-						}
+						inst.sendCoin()
 					}()
 				}
 			}
@@ -267,41 +250,108 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 		case 1:
 			inst.numAuxOne[msg.Round]++
 		}
-		if inst.round == int(msg.Round) &&
-			inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 &&
-			inst.expireB[inst.round] && !inst.hasSentCoin[inst.round] {
-			//TODO(chenzx): to be fulfilled
-			inst.hasSentCoin[inst.round] = true
-			m := &messagepb.Msg{
-				Type:     messagepb.MsgType_COIN,
-				From:     inst.id,
-				Proposer: msg.Proposer,
-				Seq:      msg.Seq,
-				Round:    msg.Round,
-				Content:  []byte{1},
-			}
-			inst.outputc <- m
+		if inst.round == int(msg.Round) && !inst.hasSentCoin[inst.round] {
+			inst.sendCoin()
 		}
 	case messagepb.MsgType_COIN:
+		inst.coinMsgs[msg.Round][msg.From] = msg
 		inst.numCoin[msg.Round]++
 		if inst.round == int(msg.Round) && inst.numCoin[inst.round] >= inst.f+1 &&
 			!inst.decided {
-			inst.decided = true
-			// coin := 1
-			inst.decideCh <- []byte{}
+			inst.newRound()
 		}
 	case messagepb.MsgType_CANVOTEZERO:
 		if inst.round == 0 && !inst.bvalZero[inst.round] && !inst.bvalOne[inst.round] {
 			inst.bvalZero[inst.round] = true
 			m := &messagepb.Msg{
 				Type:     messagepb.MsgType_BVAL,
-				From:     inst.id,
 				Proposer: inst.id,
-				Seq:      msg.Seq,
+				Seq:      inst.sequence,
 				Round:    uint32(inst.round),
 				Content:  []byte{0},
 			}
 			inst.outputc <- m
 		}
 	}
+}
+
+func (inst *instance) sendCoin() {
+	if !inst.hasSentCoin[inst.round] && inst.expireB[inst.round] {
+		if !inst.decided {
+			if inst.oneEndorsed[inst.round] && inst.numAuxOne[inst.round] >= inst.f+1 {
+				inst.binVals = 1
+			} else if inst.zeroEndorsed[inst.round] && inst.numAuxZero[inst.round] >= inst.f+1 {
+				inst.binVals = 0
+			} else if inst.zeroEndorsed[inst.round] && inst.oneEndorsed[inst.round] &&
+				inst.numAuxZero[inst.round]+inst.numAuxOne[inst.round] >= inst.f+1 {
+				inst.binVals = 2
+			} else {
+				return
+			}
+		}
+	} else {
+		return
+	}
+	inst.hasSentCoin[inst.round] = true
+	m := &messagepb.Msg{
+		Type:     messagepb.MsgType_COIN,
+		Proposer: inst.id,
+		Seq:      inst.sequence,
+		Round:    uint32(inst.round),
+		Content:  inst.blsSig.Sign(inst.getCoinInfo()),
+	}
+	inst.outputc <- m
+}
+
+func (inst *instance) getCoinInfo() []byte {
+	bsender := make([]byte, 8)
+	binary.LittleEndian.PutUint64(bsender, uint64(inst.id))
+	bseq := make([]byte, 8)
+	binary.LittleEndian.PutUint64(bseq, uint64(inst.sequence))
+	b := make([]byte, 17)
+	b = append(b, bsender...)
+	b = append(b, bseq...)
+	b = append(b, uint8(inst.round))
+	return b
+}
+
+func (inst *instance) newRound() {
+	sigShares := make([][]byte, 0)
+	for _, m := range inst.coinMsgs[inst.round] {
+		if m != nil {
+			sigShares = append(sigShares, m.Content)
+		}
+	}
+	if len(sigShares) < inst.f+1 {
+		return
+	}
+	coin := inst.blsSig.Recover(inst.getCoinInfo(), sigShares, inst.f+1, inst.n)
+	var nextVote byte
+	if coin[0]%2 == inst.binVals {
+		if (inst.binVals == 1 && inst.proposal == nil) ||
+			(inst.binVals == 0 && inst.proposal == nil && inst.proposer == inst.id) {
+			return
+		}
+		inst.decided = true
+		inst.decideCh <- []byte{inst.binVals}
+		nextVote = inst.binVals
+	} else if inst.binVals != 2 {
+		nextVote = inst.binVals
+	} else {
+		nextVote = coin[0] % 2
+	}
+	inst.round++
+	if nextVote == 0 {
+		inst.bvalZero[inst.round] = true
+	} else {
+		inst.bvalOne[inst.round] = true
+	}
+	m := &messagepb.Msg{
+		Type:     messagepb.MsgType_BVAL,
+		Proposer: inst.id,
+		Seq:      inst.sequence,
+		Round:    uint32(inst.round),
+		Content:  []byte{nextVote},
+	}
+	inst.outputc <- m
 }

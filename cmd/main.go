@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/prototext"
 	"themix.new.io/config/configpb"
+	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/themix"
 )
 
@@ -34,6 +35,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	node := themix.InitNode(uint32(*id), int(configuration.Batch), int(configuration.N), int(configuration.F), int(configuration.Delta), int(configuration.DeltaBar), configuration.Peers)
+	blsSig, err := bls.InitBLS(configuration.BlsKeyPath, len(configuration.Peers), int(len(configuration.Peers)/2+1), int(*id))
+	if err != nil {
+		panic(err)
+	}
+	node := themix.InitNode(uint32(*id), blsSig, int(configuration.Batch), int(configuration.N), int(configuration.F), int(configuration.Delta), int(configuration.DeltaBar), configuration.Peers)
 	node.Run()
 }

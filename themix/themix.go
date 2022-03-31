@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"themix.new.io/client/clientpb"
+	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/message/messagepb"
 )
 
@@ -27,7 +28,7 @@ type Themix struct {
 	proposed  bool
 }
 
-func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
+func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
 	themix := &Themix{
 		inputc:    inputc,
 		outputc:   outputc,
@@ -50,7 +51,7 @@ func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagep
 		finishCh := make(chan []byte)
 		themix.finishCh[uint32(i)] = finishCh
 		themix.msgc[uint32(i)] = msgc
-		themix.instances[i] = initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, themix.decideCh, finishCh)
+		themix.instances[i] = initInstance(uint32(i), uint32(i), themix.seq, n, f, delta, deltaBar, blsSig, msgc, outputc, themix.decideCh, finishCh)
 	}
 	return themix
 }
@@ -73,7 +74,6 @@ func (themix *Themix) run() {
 			} else if themix.decided == themix.n-themix.f {
 				m := &messagepb.Msg{
 					Type: messagepb.MsgType_CANVOTEZERO,
-					Seq:  themix.seq,
 				}
 				for i := 0; i < themix.n; i++ {
 					themix.msgc[uint32(i)] <- m
