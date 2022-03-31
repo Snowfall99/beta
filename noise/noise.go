@@ -96,6 +96,7 @@ func (node *noiseNode) onReceiveMessage(msg *messagepb.Msg) {
 func (node *noiseNode) broadcast() {
 	for {
 		msg := <-node.outputc
+		msg.From = node.id
 		for _, peer := range node.peers {
 			if peer != nil {
 				go node.sendMessage(peer.addr, msg)
