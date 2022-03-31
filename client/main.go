@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"log"
-	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,11 +24,11 @@ func main() {
 	defer conn.Close()
 
 	client := clientpb.NewThemixClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	// ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// defer cancel()
 
 	for i := 0; i < *number; i++ {
-		resp, err := client.Post(ctx, &clientpb.Request{Payload: []*clientpb.Payload{{Payload: "a"}}})
+		resp, err := client.Post(context.Background(), &clientpb.Request{Payload: []*clientpb.Payload{{Payload: "a"}}})
 		if err != nil {
 			log.Fatal("client.Post: ", err)
 		}
