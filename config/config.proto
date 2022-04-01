@@ -11,7 +11,8 @@ message Configuration {
     int32 delta = 5;
     int32 deltaBar = 6;
     string blsKeyPath = 7;
-    repeated Peer peers = 8;
+    string pk = 8;
+    repeated Peer peers = 9;
 }
 
 message Peer {
