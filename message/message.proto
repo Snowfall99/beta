@@ -22,8 +22,3 @@ enum MsgType {
     COIN = 5;
     CANVOTEZERO = 6;
 }
-
-enum VerifyResult {
-    ACCEPT = 0;
-    REJECT = 1;
-}
