@@ -13,6 +13,8 @@ import (
 	"themix.new.io/client/clientpb"
 	"themix.new.io/config/configpb"
 	bls "themix.new.io/crypto/themixBLS"
+	"themix.new.io/crypto/themixECDSA"
+	"themix.new.io/noise"
 	"themix.new.io/themix"
 )
 
@@ -39,11 +41,31 @@ func main() {
 	}
 	initLog()
 	for i := 0; i < int(configuration.N); i++ {
-		blsSig, err := bls.InitBLS(configuration.BlsKeyPath, len(configuration.Peers), int(len(configuration.Peers)/2+1), i)
+		blsSig, err := bls.InitBLS(configuration.BlsKeyPath,
+			len(configuration.Peers), int(len(configuration.Peers)/2+1), i)
 		if err != nil {
 			panic(err)
 		}
-		node := themix.InitNode(uint32(i), blsSig, int(configuration.Batch), int(configuration.N), int(configuration.F), int(configuration.Delta), int(configuration.DeltaBar), configuration.Peers)
+		pk, err := themixECDSA.LoadKey(configuration.Pk)
+		if err != nil {
+			panic(err)
+		}
+		peers := make(map[uint32]*noise.Peer)
+		for idx, peerInfo := range configuration.Peers {
+			peers[uint32(idx)] = &noise.Peer{
+				PeerID: peerInfo.Id,
+				Addr:   peerInfo.Addr,
+				Pub:    &pk.PublicKey,
+			}
+		}
+		var clients []string
+		for j := 0; j < int(configuration.N); j++ {
+			clients = append(clients, configuration.Peers[j].Client)
+		}
+		node := themix.InitNode(uint32(i), blsSig, int(configuration.Batch),
+			int(configuration.N), int(configuration.F),
+			int(configuration.Delta), int(configuration.DeltaBar),
+			pk, peers, clients)
 		go node.Run()
 	}
 	txCh := make(chan []byte, configuration.N)
