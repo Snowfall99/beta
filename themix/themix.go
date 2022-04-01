@@ -25,6 +25,7 @@ type Themix struct {
 	delta     int
 	deltaBar  int
 	decided   int
+	finish    int
 	proposed  bool
 }
 
@@ -60,6 +61,19 @@ func (themix *Themix) run() {
 	for {
 		select {
 		case msg := <-themix.inputc:
+			if msg.Type == messagepb.MsgType_CANFINISH {
+				themix.finish++
+				if themix.finish == themix.n {
+					themix.reqc = nil
+					themix.repc = nil
+					themix.statusCh <- themix.seq
+					for i := 0; i < themix.n; i++ {
+						themix.finishCh[uint32(i)] <- []byte{}
+					}
+					return
+				}
+				break
+			}
 			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
 				themix.proposed = true
 			}
@@ -82,13 +96,9 @@ func (themix *Themix) run() {
 				if themix.proposed {
 					themix.repc <- []byte{}
 				}
-				themix.reqc = nil
-				themix.repc = nil
-				themix.statusCh <- themix.seq
-				for i := 0; i < themix.n; i++ {
-					themix.finishCh[uint32(i)] <- []byte{}
+				themix.outputc <- &messagepb.Msg{
+					Type: messagepb.MsgType_CANFINISH,
 				}
-				return
 			}
 		}
 	}

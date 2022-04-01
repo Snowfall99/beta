@@ -21,4 +21,5 @@ enum MsgType {
     AUX = 4;
     COIN = 5;
     CANVOTEZERO = 6;
+    CANFINISH = 7;
 }
