@@ -10,6 +10,7 @@ message Msg {
     uint32 round = 4;
     MsgType type = 5;
     bytes content = 6;
+    bytes signature = 7;
 }
 
 enum MsgType {
