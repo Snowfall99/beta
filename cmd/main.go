@@ -45,12 +45,17 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	ck, err := themixECDSA.LoadKey(configuration.Ck)
+	if err != nil {
+		panic(err)
+	}
 	peers := make(map[uint32]*noise.Peer)
 	for idx, peerInfo := range configuration.Peers {
 		peers[uint32(idx)] = &noise.Peer{
 			PeerID: peerInfo.Id,
 			Addr:   peerInfo.Addr,
 			Pub:    &pk.PublicKey,
+			Ck:     &ck.PublicKey,
 		}
 	}
 	var clients []string
@@ -60,6 +65,6 @@ func main() {
 	node := themix.InitNode(uint32(*id), blsSig, int(configuration.Batch),
 		int(configuration.N), int(configuration.F),
 		int(configuration.Delta), int(configuration.DeltaBar),
-		pk, peers, clients)
+		pk, &ck.PublicKey, peers, clients, configuration.Sign)
 	node.Run()
 }

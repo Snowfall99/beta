@@ -6,29 +6,38 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/perlin-network/noise"
 	"google.golang.org/protobuf/proto"
+	"themix.new.io/client/clientpb"
 	"themix.new.io/crypto/sha256"
 	"themix.new.io/crypto/themixECDSA"
 	"themix.new.io/message/messagepb"
 )
 
+const BUFFER = 1024
+
 type Peer struct {
 	PeerID uint32
 	Addr   string
 	Pub    *ecdsa.PublicKey
+	Ck     *ecdsa.PublicKey
 }
 
 type noiseNode struct {
-	id      uint32
-	peers   map[uint32]*Peer
-	node    *noise.Node
-	inputc  chan *messagepb.Msg
-	outputc chan *messagepb.Msg
-	priv    *ecdsa.PrivateKey
+	id           uint32
+	peers        map[uint32]*Peer
+	node         *noise.Node
+	inputc       chan *messagepb.Msg
+	outputc      chan *messagepb.Msg
+	verifyInput  chan *clientpb.Payload
+	verifyOutput chan []byte
+	priv         *ecdsa.PrivateKey
+	ck           *ecdsa.PublicKey
+	sign         bool
 }
 
 type noiseMessage struct {
@@ -52,13 +61,18 @@ func unmarshalNoiseMessage(buf []byte) (noiseMessage, error) {
 	return msg, nil
 }
 
-func InitNoise(id uint32, pk *ecdsa.PrivateKey, peers map[uint32]*Peer, inputc, outputc chan *messagepb.Msg) {
+func InitNoise(id uint32, pk *ecdsa.PrivateKey, ck *ecdsa.PublicKey, peers map[uint32]*Peer, inputc, outputc chan *messagepb.Msg, sign bool) {
 	node := &noiseNode{
-		id:      id,
-		priv:    pk,
-		peers:   peers,
-		inputc:  inputc,
-		outputc: outputc}
+		id:           id,
+		priv:         pk,
+		ck:           ck,
+		peers:        peers,
+		inputc:       inputc,
+		outputc:      outputc,
+		verifyInput:  make(chan *clientpb.Payload, BUFFER),
+		verifyOutput: make(chan []byte, BUFFER),
+		sign:         sign}
+	go node.initVerifyPool()
 	log.Println("noiseNode addr:", peers[id].Addr)
 	port, err := strconv.Atoi(strings.Split(peers[id].Addr, ":")[1])
 	if err != nil {
@@ -79,6 +93,65 @@ func InitNoise(id uint32, pk *ecdsa.PrivateKey, peers map[uint32]*Peer, inputc, 
 	go node.broadcast()
 }
 
+func (node *noiseNode) initVerifyPool() {
+	for i := 0; i < 2*runtime.NumCPU()-1; i++ {
+		go func() {
+			for {
+				payload := <-node.verifyInput
+				if node.verifyPayload(payload) {
+					node.verifyOutput <- []byte{1}
+				} else {
+					node.verifyOutput <- []byte{0}
+				}
+			}
+		}()
+	}
+	for {
+		payload := <-node.verifyInput
+		if node.verifyPayload(payload) {
+			node.verifyOutput <- []byte{1}
+		} else {
+			node.verifyOutput <- []byte{0}
+		}
+	}
+}
+
+func (node *noiseNode) verifyReq(req []byte) bool {
+	request := &clientpb.Request{}
+	err := proto.Unmarshal(req, request)
+	if err != nil {
+		log.Fatal("proto.Unmarshal: ", err)
+	}
+	for _, payload := range request.Payload {
+		node.verifyInput <- payload
+	}
+	result := true
+	for i := 0; i < len(request.Payload); i++ {
+		resp := <-node.verifyOutput
+		if resp[0] == 0 {
+			log.Println("verify request fail")
+			result = false
+		}
+	}
+	if !result {
+		return false
+	}
+	return true
+}
+
+func (node *noiseNode) verifyPayload(payload *clientpb.Payload) bool {
+	content := []byte(payload.Payload)
+	hash, err := sha256.ComputeHash(content)
+	if err != nil {
+		log.Fatal("sha256.ComputeHash: ", err)
+	}
+	b, err := themixECDSA.VerifyECDSA(node.ck, payload.Signature, hash)
+	if err != nil {
+		log.Fatal("themix.VerifyECDSA: ", err)
+	}
+	return b
+}
+
 func (node *noiseNode) Handler(ctx noise.HandlerContext) error {
 	obj, err := ctx.DecodeMessage()
 	if err != nil {
@@ -97,6 +170,11 @@ func (node *noiseNode) onReceiveMessage(msg *messagepb.Msg) {
 		msg.Type == messagepb.MsgType_BVAL || msg.Type == messagepb.MsgType_AUX {
 		if !verify(msg, node.peers[msg.From].Pub) {
 			log.Fatal("verify: consensus message verification fail")
+		}
+		if node.sign && msg.Type == messagepb.MsgType_VAL {
+			if !node.verifyReq(msg.Content) {
+				log.Fatal("verifyReq: client request payload verification fail")
+			}
 		}
 	}
 	node.inputc <- msg

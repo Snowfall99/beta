@@ -14,7 +14,7 @@ type Node struct {
 	themixQue *ThemixQue
 }
 
-func InitNode(id uint32, blsSig *bls.BlsSig, batch, n, f, delta, deltaBar int, pk *ecdsa.PrivateKey, peers map[uint32]*noise.Peer, clients []string) *Node {
+func InitNode(id uint32, blsSig *bls.BlsSig, batch, n, f, delta, deltaBar int, pk *ecdsa.PrivateKey, ck *ecdsa.PublicKey, peers map[uint32]*noise.Peer, clients []string, sign bool) *Node {
 	inputc := make(chan *messagepb.Msg)
 	outputc := make(chan *messagepb.Msg)
 	reqc := make(chan *clientpb.Request)
@@ -22,7 +22,7 @@ func InitNode(id uint32, blsSig *bls.BlsSig, batch, n, f, delta, deltaBar int, p
 	client := clients[id]
 	go initProposer(batch, client, reqc, repc, outputc, id)
 	themixQue := initThemixQue(id, blsSig, n, f, delta, deltaBar, inputc, outputc, reqc, repc)
-	noise.InitNoise(id, pk, peers, inputc, outputc)
+	noise.InitNoise(id, pk, ck, peers, inputc, outputc, sign)
 	return &Node{
 		themixQue: themixQue,
 	}
