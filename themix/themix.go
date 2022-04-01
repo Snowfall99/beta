@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"themix.new.io/client/clientpb"
+	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/message/messagepb"
 )
 
@@ -24,10 +25,11 @@ type Themix struct {
 	delta     int
 	deltaBar  int
 	decided   int
+	finish    int
 	proposed  bool
 }
 
-func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
+func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
 	themix := &Themix{
 		inputc:    inputc,
 		outputc:   outputc,
@@ -50,7 +52,7 @@ func initThemix(id, seq uint32, n, f, delta, deltaBar int, inputc chan *messagep
 		finishCh := make(chan []byte)
 		themix.finishCh[uint32(i)] = finishCh
 		themix.msgc[uint32(i)] = msgc
-		themix.instances[i] = initInstance(uint32(i), n, f, delta, deltaBar, msgc, outputc, themix.decideCh, finishCh)
+		themix.instances[i] = initInstance(uint32(i), uint32(themix.id), themix.seq, n, f, delta, deltaBar, blsSig, msgc, outputc, themix.decideCh, finishCh)
 	}
 	return themix
 }
@@ -59,6 +61,19 @@ func (themix *Themix) run() {
 	for {
 		select {
 		case msg := <-themix.inputc:
+			if msg.Type == messagepb.MsgType_CANFINISH {
+				themix.finish++
+				if themix.finish == themix.n {
+					themix.reqc = nil
+					themix.repc = nil
+					themix.statusCh <- themix.seq
+					for i := 0; i < themix.n; i++ {
+						themix.finishCh[uint32(i)] <- []byte{}
+					}
+					return
+				}
+				break
+			}
 			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
 				themix.proposed = true
 			}
@@ -70,17 +85,20 @@ func (themix *Themix) run() {
 				if !themix.proposed {
 					themix.reqc <- &clientpb.Request{}
 				}
+			} else if themix.decided == themix.n-themix.f {
+				m := &messagepb.Msg{
+					Type: messagepb.MsgType_CANVOTEZERO,
+				}
+				for i := 0; i < themix.n; i++ {
+					themix.msgc[uint32(i)] <- m
+				}
 			} else if themix.decided == themix.n {
 				if themix.proposed {
 					themix.repc <- []byte{}
 				}
-				themix.reqc = nil
-				themix.repc = nil
-				themix.statusCh <- themix.seq
-				for i := 0; i < themix.n; i++ {
-					themix.finishCh[uint32(i)] <- []byte{}
+				themix.outputc <- &messagepb.Msg{
+					Type: messagepb.MsgType_CANFINISH,
 				}
-				return
 			}
 		}
 	}

@@ -10,6 +10,7 @@ message Msg {
     uint32 round = 4;
     MsgType type = 5;
     bytes content = 6;
+    bytes signature = 7;
 }
 
 enum MsgType {
@@ -19,9 +20,6 @@ enum MsgType {
     BVAL = 3;
     AUX = 4;
     COIN = 5;
-}
-
-enum VerifyResult {
-    ACCEPT = 0;
-    REJECT = 1;
+    CANVOTEZERO = 6;
+    CANFINISH = 7;
 }

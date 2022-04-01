@@ -7,3 +7,5 @@ main
 client
 .vscode/
 log/*
+tbls_sk*
+priv_sk

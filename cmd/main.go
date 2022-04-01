@@ -8,6 +8,9 @@ import (
 
 	"google.golang.org/protobuf/encoding/prototext"
 	"themix.new.io/config/configpb"
+	bls "themix.new.io/crypto/themixBLS"
+	"themix.new.io/crypto/themixECDSA"
+	"themix.new.io/noise"
 	"themix.new.io/themix"
 )
 
@@ -20,7 +23,6 @@ func initLog(id int) {
 }
 
 func main() {
-	// TODO(chenzx): Under construction.
 	// id is set as a flag parameter for local test
 	id := flag.Uint("id", 0, "ID of themix node")
 	flag.Parse()
@@ -34,6 +36,35 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	node := themix.InitNode(uint32(*id), int(configuration.Batch), int(configuration.N), int(configuration.F), int(configuration.Delta), int(configuration.DeltaBar), configuration.Peers)
+	blsSig, err := bls.InitBLS(configuration.BlsKeyPath,
+		len(configuration.Peers), int(len(configuration.Peers)/2+1), int(*id))
+	if err != nil {
+		panic(err)
+	}
+	pk, err := themixECDSA.LoadKey(configuration.Pk)
+	if err != nil {
+		panic(err)
+	}
+	ck, err := themixECDSA.LoadKey(configuration.Ck)
+	if err != nil {
+		panic(err)
+	}
+	peers := make(map[uint32]*noise.Peer)
+	for idx, peerInfo := range configuration.Peers {
+		peers[uint32(idx)] = &noise.Peer{
+			PeerID: peerInfo.Id,
+			Addr:   peerInfo.Addr,
+			Pub:    &pk.PublicKey,
+			Ck:     &ck.PublicKey,
+		}
+	}
+	var clients []string
+	for i := 0; i < int(configuration.N); i++ {
+		clients = append(clients, configuration.Peers[i].Client)
+	}
+	node := themix.InitNode(uint32(*id), blsSig, int(configuration.Batch),
+		int(configuration.N), int(configuration.F),
+		int(configuration.Delta), int(configuration.DeltaBar),
+		pk, &ck.PublicKey, peers, clients, configuration.Sign)
 	node.Run()
 }

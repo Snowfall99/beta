@@ -10,7 +10,11 @@ message Configuration {
     int32 f = 4;
     int32 delta = 5;
     int32 deltaBar = 6;
-    repeated Peer peers = 7;
+    string blsKeyPath = 7;
+    string pk = 8;
+    string ck = 9;
+    bool sign = 10;
+    repeated Peer peers = 11;
 }
 
 message Peer {
