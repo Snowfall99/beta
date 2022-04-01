@@ -51,7 +51,7 @@ func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, i
 		finishCh := make(chan []byte)
 		themix.finishCh[uint32(i)] = finishCh
 		themix.msgc[uint32(i)] = msgc
-		themix.instances[i] = initInstance(uint32(i), uint32(i), themix.seq, n, f, delta, deltaBar, blsSig, msgc, outputc, themix.decideCh, finishCh)
+		themix.instances[i] = initInstance(uint32(i), uint32(themix.id), themix.seq, n, f, delta, deltaBar, blsSig, msgc, outputc, themix.decideCh, finishCh)
 	}
 	return themix
 }
