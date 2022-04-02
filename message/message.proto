@@ -3,6 +3,10 @@ package messagepb;
 
 option go_package = "./messagepb";
 
+message Collection {
+    repeated bytes slot = 1;
+}
+
 message Msg {
     uint32 seq = 1;
     uint32 from = 2;
@@ -11,6 +15,7 @@ message Msg {
     MsgType type = 5;
     bytes content = 6;
     bytes signature = 7;
+    bytes collection = 8;
 }
 
 enum MsgType {
@@ -22,4 +27,7 @@ enum MsgType {
     COIN = 5;
     CANVOTEZERO = 6;
     CANFINISH = 7;
+    RCOLLECTION = 8;
+    BZEROCOLLECTION = 9;
+    BONECOLLECTION = 10;
 }
