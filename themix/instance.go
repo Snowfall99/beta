@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"themix.new.io/crypto/sha256"
 	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/message/messagepb"
@@ -14,7 +15,6 @@ import (
 const maxround = 30
 
 type instance struct {
-	// TODO(chenzx): To be implemented.
 	// ThemiX send message to instance through this channel.
 	msgc         chan *messagepb.Msg
 	outputc      chan *messagepb.Msg
@@ -37,10 +37,13 @@ type instance struct {
 	numEcho      int
 	hasReady     bool
 	numReady     int
+	readySign    *messagepb.Collection
 	bvalZero     []bool
 	bvalOne      []bool
 	numBvalZero  []int
 	numBvalOne   []int
+	bzeroSign    []*messagepb.Collection
+	boneSign     []*messagepb.Collection
 	zeroEndorsed []bool
 	oneEndorsed  []bool
 	hasSentAux   []bool
@@ -49,6 +52,7 @@ type instance struct {
 	numCoin      []int
 	hasSentCoin  []bool
 	coinMsgs     [][]*messagepb.Msg
+	coinResult   [][]byte
 	startR       bool
 	expireR      bool
 	startB       []bool
@@ -69,6 +73,9 @@ func initInstance(id, proposer, sequence uint32, n, f, delta, deltaBar int, blsS
 		f:            f,
 		delta:        delta,
 		deltaBar:     deltaBar,
+		readySign:    &messagepb.Collection{Slot: make([][]byte, n)},
+		bzeroSign:    make([]*messagepb.Collection, maxround),
+		boneSign:     make([]*messagepb.Collection, maxround),
 		bvalZero:     make([]bool, maxround),
 		bvalOne:      make([]bool, maxround),
 		numBvalZero:  make([]int, maxround),
@@ -81,11 +88,14 @@ func initInstance(id, proposer, sequence uint32, n, f, delta, deltaBar int, blsS
 		numCoin:      make([]int, maxround),
 		hasSentCoin:  make([]bool, maxround),
 		coinMsgs:     make([][]*messagepb.Msg, maxround),
+		coinResult:   make([][]byte, maxround),
 		startB:       make([]bool, maxround),
 		expireB:      make([]bool, maxround),
 	}
 	for i := 0; i < maxround; i++ {
 		inst.coinMsgs[i] = make([]*messagepb.Msg, n)
+		inst.bzeroSign[i] = &messagepb.Collection{Slot: make([][]byte, n)}
+		inst.boneSign[i] = &messagepb.Collection{Slot: make([][]byte, n)}
 	}
 	go inst.run()
 	return inst
@@ -175,6 +185,7 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 		}
 	case messagepb.MsgType_READY:
 		inst.numReady++
+		inst.readySign.Slot[msg.From] = msg.Signature
 		if inst.numReady >= inst.f+1 && inst.round == 0 &&
 			!inst.bvalOne[inst.round] && inst.proposal != nil {
 			inst.bvalOne[inst.round] = true
@@ -185,19 +196,35 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 				Content:  []byte{1},
 			}
 			inst.outputc <- m
+			collection := serialCollection(inst.readySign)
+			inst.outputc <- &messagepb.Msg{
+				Type:       messagepb.MsgType_RCOLLECTION,
+				Proposer:   msg.Proposer,
+				Seq:        msg.Seq,
+				Collection: collection,
+			}
 		}
 	case messagepb.MsgType_BVAL:
 		switch msg.Content[0] {
 		case 0:
 			inst.numBvalZero[msg.Round]++
+			inst.bzeroSign[msg.Round].Slot[msg.From] = msg.Signature
 		case 1:
 			inst.numBvalOne[msg.Round]++
+			inst.boneSign[msg.From].Slot[msg.From] = msg.Signature
 		}
 		if msg.Content[0] == 0 && inst.round == int(msg.Round) &&
 			inst.numBvalZero[inst.round] >= inst.f+1 &&
 			!inst.zeroEndorsed[inst.round] {
 			inst.zeroEndorsed[inst.round] = true
-			// TODO(chenzx): broadcast f+1 BVAL(b, r)
+			collection := serialCollection(inst.bzeroSign[msg.Round])
+			inst.outputc <- &messagepb.Msg{
+				Type:       messagepb.MsgType_BZEROCOLLECTION,
+				Proposer:   msg.Proposer,
+				Round:      msg.Round,
+				Seq:        msg.Seq,
+				Collection: collection,
+			}
 			if !inst.hasSentAux[inst.round] {
 				inst.hasSentAux[inst.round] = true
 				m := &messagepb.Msg{
@@ -222,7 +249,14 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			inst.numBvalOne[inst.round] >= inst.f+1 &&
 			!inst.oneEndorsed[inst.round] {
 			inst.oneEndorsed[inst.round] = true
-			// TODO(chenzx): broadcast f+1 BVAL(b, r)
+			collection := serialCollection(inst.boneSign[msg.Round])
+			inst.outputc <- &messagepb.Msg{
+				Type:       messagepb.MsgType_BONECOLLECTION,
+				Proposer:   msg.Proposer,
+				Round:      msg.Round,
+				Seq:        msg.Seq,
+				Collection: collection,
+			}
 			if !inst.hasSentAux[inst.round] {
 				inst.hasSentAux[inst.round] = true
 				m := &messagepb.Msg{
@@ -241,6 +275,32 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 						inst.sendCoin()
 					}()
 				}
+			}
+		}
+		if msg.Content[0] == 0 && inst.round == (int(msg.Round)+1) &&
+			inst.coinResult[msg.Round][0] == 0 && inst.numBvalZero[msg.Round] >= inst.f+1 {
+			if !inst.bvalZero[inst.round] || !inst.hasSentAux[inst.round] {
+				m := &messagepb.Msg{
+					Type:     messagepb.MsgType_BVAL,
+					Proposer: msg.Proposer,
+					Seq:      msg.Seq,
+					Round:    uint32(inst.round),
+					Content:  []byte{0},
+				}
+				inst.outputc <- m
+			}
+		}
+		if msg.Content[0] == 1 && inst.round == (int(msg.Round)+1) &&
+			inst.coinResult[msg.Round][0] == 1 && inst.numBvalOne[msg.Round] >= inst.f+1 {
+			if !inst.bvalOne[inst.round] || !inst.hasSentAux[inst.round] {
+				m := &messagepb.Msg{
+					Type:     messagepb.MsgType_BVAL,
+					Proposer: msg.Proposer,
+					Seq:      msg.Seq,
+					Round:    uint32(inst.round),
+					Content:  []byte{1},
+				}
+				inst.outputc <- m
 			}
 		}
 	case messagepb.MsgType_AUX:
@@ -272,6 +332,76 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 			}
 			inst.outputc <- m
 		}
+	case messagepb.MsgType_RCOLLECTION:
+		if inst.round != 0 || inst.proposal == nil || inst.bvalZero[inst.round] || inst.bvalOne[inst.round] {
+			break
+		}
+		if !inst.verifyRcollection(msg) {
+			log.Fatal("inst.verifyRcollection fail")
+		}
+		inst.outputc <- msg
+		inst.bvalOne[inst.round] = true
+		m := &messagepb.Msg{
+			Type:     messagepb.MsgType_BVAL,
+			Proposer: msg.Proposer,
+			Seq:      msg.Seq,
+			Content:  []byte{1},
+		}
+		inst.outputc <- m
+	case messagepb.MsgType_BZEROCOLLECTION:
+		if inst.zeroEndorsed[msg.Round] || inst.oneEndorsed[msg.Round] || inst.hasSentAux[msg.Round] {
+			break
+		}
+		if !inst.verifyBzero(msg) {
+			log.Fatal("inst.verifyBzero fail")
+		}
+		inst.outputc <- msg
+		inst.zeroEndorsed[msg.Round] = true
+		inst.hasSentAux[msg.Round] = true
+		m := &messagepb.Msg{
+			Type:     messagepb.MsgType_AUX,
+			Proposer: msg.Proposer,
+			Seq:      msg.Seq,
+			Round:    msg.Round,
+			Content:  []byte{0},
+		}
+		inst.outputc <- m
+		if !inst.startB[inst.round] {
+			inst.startB[inst.round] = true
+			go func() {
+				time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
+				inst.expireB[inst.round] = true
+				inst.sendCoin()
+			}()
+		}
+	case messagepb.MsgType_BONECOLLECTION:
+		if inst.zeroEndorsed[msg.Round] || inst.oneEndorsed[msg.Round] || inst.hasSentAux[msg.Round] {
+			break
+		}
+		if !inst.verifyBone(msg) {
+			log.Fatal("inst.verifyBone fail")
+		}
+		inst.outputc <- msg
+		inst.oneEndorsed[msg.Round] = true
+		inst.hasSentAux[msg.Round] = true
+		m := &messagepb.Msg{
+			Type:     messagepb.MsgType_AUX,
+			Proposer: msg.Proposer,
+			Seq:      msg.Seq,
+			Round:    msg.Round,
+			Content:  []byte{1},
+		}
+		inst.outputc <- m
+		if !inst.startB[inst.round] {
+			inst.startB[inst.round] = true
+			go func() {
+				time.Sleep(time.Duration(inst.deltaBar) * time.Millisecond)
+				inst.expireB[inst.round] = true
+				inst.sendCoin()
+			}()
+		}
+	default:
+		log.Fatal("Message's type is undefined")
 	}
 }
 
@@ -326,6 +456,7 @@ func (inst *instance) newRound() {
 		return
 	}
 	coin := inst.blsSig.Recover(inst.getCoinInfo(), sigShares, inst.f+1, inst.n)
+	inst.coinResult[inst.round] = []byte{coin[0] % 2}
 	var nextVote byte
 	if coin[0]%2 == inst.binVals {
 		if (inst.binVals == 1 && inst.proposal == nil) ||
@@ -354,4 +485,33 @@ func (inst *instance) newRound() {
 		Content:  []byte{nextVote},
 	}
 	inst.outputc <- m
+}
+
+func serialCollection(collection *messagepb.Collection) []byte {
+	data, err := proto.Marshal(collection)
+	if err != nil {
+		log.Fatal("proto.Marshal: ", err)
+	}
+	return data
+}
+
+func deserialCollection(data []byte) *messagepb.Collection {
+	collection := &messagepb.Collection{}
+	err := proto.Unmarshal(data, collection)
+	if err != nil {
+		log.Fatal("proto.Unmarshal: ", err)
+	}
+	return collection
+}
+
+func (inst *instance) verifyRcollection(collection *messagepb.Msg) bool {
+	return true
+}
+
+func (inst *instance) verifyBzero(collection *messagepb.Msg) bool {
+	return true
+}
+
+func (inst *instance) verifyBone(collection *messagepb.Msg) bool {
+	return true
 }
