@@ -3,7 +3,6 @@ package noise
 import (
 	"context"
 	"crypto/ecdsa"
-	"encoding/binary"
 	"log"
 	"net"
 	"runtime"
@@ -15,6 +14,7 @@ import (
 	"themix.new.io/client/clientpb"
 	"themix.new.io/crypto/sha256"
 	"themix.new.io/crypto/themixECDSA"
+	"themix.new.io/message"
 	"themix.new.io/message/messagepb"
 )
 
@@ -202,7 +202,7 @@ func (node *noiseNode) sendMessage(addr string, msg *messagepb.Msg) {
 }
 
 func verify(msg *messagepb.Msg, pub *ecdsa.PublicKey) bool {
-	content := getMsgInfo(msg)
+	content := message.GetMsgInfo(msg)
 	hash, err := sha256.ComputeHash(content)
 	if err != nil {
 		log.Fatal("sha256.ComputeHash: ", err)
@@ -215,7 +215,7 @@ func verify(msg *messagepb.Msg, pub *ecdsa.PublicKey) bool {
 }
 
 func sign(msg *messagepb.Msg, priv *ecdsa.PrivateKey) {
-	content := getMsgInfo(msg)
+	content := message.GetMsgInfo(msg)
 	hash, err := sha256.ComputeHash(content)
 	if err != nil {
 		log.Fatal("sha256.ComputeHash: ", err)
@@ -225,24 +225,4 @@ func sign(msg *messagepb.Msg, priv *ecdsa.PrivateKey) {
 		log.Fatal("themixECDSA.SignECDSA: ", err)
 	}
 	msg.Signature = sig
-}
-
-func getMsgInfo(msg *messagepb.Msg) []byte {
-	btype := make([]byte, 8)
-	binary.LittleEndian.PutUint64(btype, uint64(msg.Type))
-	bseq := make([]byte, 8)
-	binary.LittleEndian.PutUint64(bseq, uint64(msg.Seq))
-	bproposer := make([]byte, 8)
-	binary.LittleEndian.PutUint64(bproposer, uint64(msg.Proposer))
-	b := make([]byte, 26)
-	b = append(b, btype...)
-	b = append(b, bseq...)
-	b = append(b, bproposer...)
-	b = append(b, uint8(msg.Round))
-	if len(msg.Content) > 0 {
-		b = append(b, uint8(msg.Content[0]))
-	} else {
-		b = append(b, uint8(0))
-	}
-	return b
 }
