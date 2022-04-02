@@ -52,6 +52,7 @@ type instance struct {
 	numCoin      []int
 	hasSentCoin  []bool
 	coinMsgs     [][]*messagepb.Msg
+	coinResult   [][]byte
 	startR       bool
 	expireR      bool
 	startB       []bool
@@ -87,6 +88,7 @@ func initInstance(id, proposer, sequence uint32, n, f, delta, deltaBar int, blsS
 		numCoin:      make([]int, maxround),
 		hasSentCoin:  make([]bool, maxround),
 		coinMsgs:     make([][]*messagepb.Msg, maxround),
+		coinResult:   make([][]byte, maxround),
 		startB:       make([]bool, maxround),
 		expireB:      make([]bool, maxround),
 	}
@@ -275,6 +277,32 @@ func (inst *instance) handleMsg(msg *messagepb.Msg) {
 				}
 			}
 		}
+		if msg.Content[0] == 0 && inst.round == (int(msg.Round)+1) &&
+			inst.coinResult[msg.Round][0] == 0 && inst.numBvalZero[msg.Round] >= inst.f+1 {
+			if !inst.bvalZero[inst.round] || !inst.hasSentAux[inst.round] {
+				m := &messagepb.Msg{
+					Type:     messagepb.MsgType_BVAL,
+					Proposer: msg.Proposer,
+					Seq:      msg.Seq,
+					Round:    uint32(inst.round),
+					Content:  []byte{0},
+				}
+				inst.outputc <- m
+			}
+		}
+		if msg.Content[0] == 1 && inst.round == (int(msg.Round)+1) &&
+			inst.coinResult[msg.Round][0] == 1 && inst.numBvalOne[msg.Round] >= inst.f+1 {
+			if !inst.bvalOne[inst.round] || !inst.hasSentAux[inst.round] {
+				m := &messagepb.Msg{
+					Type:     messagepb.MsgType_BVAL,
+					Proposer: msg.Proposer,
+					Seq:      msg.Seq,
+					Round:    uint32(inst.round),
+					Content:  []byte{1},
+				}
+				inst.outputc <- m
+			}
+		}
 	case messagepb.MsgType_AUX:
 		switch msg.Content[0] {
 		case 0:
@@ -428,6 +456,7 @@ func (inst *instance) newRound() {
 		return
 	}
 	coin := inst.blsSig.Recover(inst.getCoinInfo(), sigShares, inst.f+1, inst.n)
+	inst.coinResult[inst.round] = []byte{coin[0] % 2}
 	var nextVote byte
 	if coin[0]%2 == inst.binVals {
 		if (inst.binVals == 1 && inst.proposal == nil) ||
