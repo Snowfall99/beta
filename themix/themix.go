@@ -9,50 +9,62 @@ import (
 )
 
 type Themix struct {
-	inputc    chan *messagepb.Msg
-	outputc   chan *messagepb.Msg
-	msgc      map[uint32]chan *messagepb.Msg
-	finishCh  map[uint32]chan []byte
-	reqc      chan *clientpb.Request
-	repc      chan []byte
-	decideCh  chan []byte
-	statusCh  chan uint32
-	instances []*instance
-	seq       uint32
-	id        uint32
-	n         int
-	f         int
-	delta     int
-	deltaBar  int
-	decided   int
-	finish    int
-	proposed  bool
+	inputc       chan *messagepb.Msg
+	outputc      chan *messagepb.Msg
+	rbcMsgc      map[uint32]chan *messagepb.Msg
+	abaMsgc      map[uint32]chan *messagepb.Msg
+	rbcFinishCh  map[uint32]chan []byte
+	abaFinishCh  map[uint32]chan []byte
+	reqc         chan *clientpb.Request
+	repc         chan []byte
+	decideCh     chan []byte
+	statusCh     chan uint32
+	rbcInstances []*rbcInstance
+	abaInstances []*abaInstance
+	seq          uint32
+	id           uint32
+	n            int
+	f            int
+	delta        int
+	deltaBar     int
+	decided      int
+	finish       int
+	proposed     bool
 }
 
 func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
 	themix := &Themix{
-		inputc:    inputc,
-		outputc:   outputc,
-		reqc:      reqc,
-		repc:      repc,
-		statusCh:  statusCh,
-		decideCh:  make(chan []byte, n),
-		finishCh:  make(map[uint32]chan []byte),
-		msgc:      make(map[uint32]chan *messagepb.Msg),
-		instances: make([]*instance, n),
-		seq:       seq,
-		id:        id,
-		n:         n,
-		f:         f,
-		delta:     delta,
-		deltaBar:  deltaBar,
+		inputc:       inputc,
+		outputc:      outputc,
+		reqc:         reqc,
+		repc:         repc,
+		statusCh:     statusCh,
+		decideCh:     make(chan []byte, n),
+		rbcFinishCh:  make(map[uint32]chan []byte),
+		abaFinishCh:  make(map[uint32]chan []byte),
+		rbcMsgc:      make(map[uint32]chan *messagepb.Msg),
+		abaMsgc:      make(map[uint32]chan *messagepb.Msg),
+		rbcInstances: make([]*rbcInstance, n),
+		abaInstances: make([]*abaInstance, n),
+		seq:          seq,
+		id:           id,
+		n:            n,
+		f:            f,
+		delta:        delta,
+		deltaBar:     deltaBar,
 	}
 	for i := 0; i < int(n); i++ {
-		msgc := make(chan *messagepb.Msg, BUFFER)
-		finishCh := make(chan []byte)
-		themix.finishCh[uint32(i)] = finishCh
-		themix.msgc[uint32(i)] = msgc
-		themix.instances[i] = initInstance(uint32(i), uint32(themix.id), themix.seq, n, f, delta, deltaBar, blsSig, msgc, outputc, themix.decideCh, finishCh)
+		rbcMsgc := make(chan *messagepb.Msg, BUFFER)
+		abaMsgc := make(chan *messagepb.Msg, BUFFER)
+		rbcFinishCh := make(chan []byte)
+		abaFinishCh := make(chan []byte)
+		deliverCh := make(chan *messagepb.Msg)
+		themix.rbcFinishCh[uint32(i)] = rbcFinishCh
+		themix.abaFinishCh[uint32(i)] = abaFinishCh
+		themix.rbcMsgc[uint32(i)] = rbcMsgc
+		themix.abaMsgc[uint32(i)] = abaMsgc
+		themix.rbcInstances[i] = initRBC(uint32(i), themix.n, themix.f, themix.deltaBar, rbcMsgc, outputc, deliverCh, rbcFinishCh)
+		themix.abaInstances[i] = initABA(uint32(i), id, themix.seq, themix.n, themix.f, themix.deltaBar, blsSig, abaMsgc, outputc, deliverCh, themix.decideCh, abaFinishCh)
 	}
 	return themix
 }
@@ -68,7 +80,8 @@ func (themix *Themix) run() {
 					themix.repc = nil
 					themix.statusCh <- themix.seq
 					for i := 0; i < themix.n; i++ {
-						themix.finishCh[uint32(i)] <- []byte{}
+						themix.rbcFinishCh[uint32(i)] <- []byte{}
+						themix.abaFinishCh[uint32(i)] <- []byte{}
 					}
 					return
 				}
@@ -77,7 +90,11 @@ func (themix *Themix) run() {
 			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
 				themix.proposed = true
 			}
-			themix.msgc[msg.Proposer] <- msg
+			if msg.Type == messagepb.MsgType_VAL || msg.Type == messagepb.MsgType_ECHO || msg.Type == messagepb.MsgType_READY || msg.Type == messagepb.MsgType_RCOLLECTION {
+				themix.rbcMsgc[msg.Proposer] <- msg
+			} else {
+				themix.abaMsgc[msg.Proposer] <- msg
+			}
 		case <-themix.decideCh:
 			themix.decided++
 			log.Println("themix decide number: ", themix.decided)
@@ -88,9 +105,10 @@ func (themix *Themix) run() {
 			} else if themix.decided == themix.n-themix.f {
 				m := &messagepb.Msg{
 					Type: messagepb.MsgType_CANVOTEZERO,
+					Seq:  themix.seq,
 				}
 				for i := 0; i < themix.n; i++ {
-					themix.msgc[uint32(i)] <- m
+					themix.abaMsgc[uint32(i)] <- m
 				}
 			} else if themix.decided == themix.n {
 				if themix.proposed {
@@ -98,6 +116,7 @@ func (themix *Themix) run() {
 				}
 				themix.outputc <- &messagepb.Msg{
 					Type: messagepb.MsgType_CANFINISH,
+					Seq:  themix.seq,
 				}
 			}
 		}

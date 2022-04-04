@@ -63,7 +63,7 @@ func (themixQue *ThemixQue) run() {
 			if themixQue.queue[msg.Seq] == ALIVE && themixQue.msgc[msg.Seq] != nil {
 				themixQue.msgc[msg.Seq] <- msg
 			} else if themixQue.queue[msg.Seq] == TOMBSTONE {
-				continue
+				break
 			} else {
 				ch := make(chan *messagepb.Msg, BUFFER)
 				themixQue.msgc[msg.Seq] = ch
