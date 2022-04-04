@@ -17,3 +17,12 @@ Consensus layer is the layer to run themix consensus. This layer consists of a q
 
 ### Proposer
 Proposer communicates with client using gRPC, the message sent between them is in the form of protobuf.
+
+## Under Construction
+This repo is still under construction.
+
+### Main Tasks
+- [ ] Liveness is broken in some case, not stable
+
+### Evaluation Tasks
+- [ ] Signature collection verification 
