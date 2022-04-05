@@ -20,6 +20,11 @@ import (
 
 const BUFFER = 1024
 
+type fromPayload struct {
+	from    uint32
+	payload *clientpb.Payload
+}
+
 type Peer struct {
 	PeerID uint32
 	Addr   string
@@ -33,7 +38,7 @@ type noiseNode struct {
 	node         *noise.Node
 	inputc       chan *messagepb.Msg
 	outputc      chan *messagepb.Msg
-	verifyInput  chan *clientpb.Payload
+	verifyInput  chan fromPayload
 	verifyOutput chan []byte
 	priv         *ecdsa.PrivateKey
 	ck           *ecdsa.PublicKey
@@ -69,7 +74,7 @@ func InitNoise(id uint32, pk *ecdsa.PrivateKey, ck *ecdsa.PublicKey, peers map[u
 		peers:        peers,
 		inputc:       inputc,
 		outputc:      outputc,
-		verifyInput:  make(chan *clientpb.Payload, BUFFER),
+		verifyInput:  make(chan fromPayload, BUFFER),
 		verifyOutput: make(chan []byte, BUFFER),
 		sign:         sign}
 	go node.initVerifyPool()
@@ -98,7 +103,7 @@ func (node *noiseNode) initVerifyPool() {
 		go func() {
 			for {
 				payload := <-node.verifyInput
-				if node.verifyPayload(payload) {
+				if node.verifyPayload(payload.payload, payload.from) {
 					node.verifyOutput <- []byte{1}
 				} else {
 					node.verifyOutput <- []byte{0}
@@ -108,7 +113,7 @@ func (node *noiseNode) initVerifyPool() {
 	}
 	for {
 		payload := <-node.verifyInput
-		if node.verifyPayload(payload) {
+		if node.verifyPayload(payload.payload, payload.from) {
 			node.verifyOutput <- []byte{1}
 		} else {
 			node.verifyOutput <- []byte{0}
@@ -116,14 +121,17 @@ func (node *noiseNode) initVerifyPool() {
 	}
 }
 
-func (node *noiseNode) verifyReq(req []byte) bool {
+func (node *noiseNode) verifyReq(msg *messagepb.Msg) bool {
 	request := &clientpb.Request{}
-	err := proto.Unmarshal(req, request)
+	err := proto.Unmarshal(msg.Content, request)
 	if err != nil {
 		log.Fatal("proto.Unmarshal: ", err)
 	}
 	for _, payload := range request.Payload {
-		node.verifyInput <- payload
+		node.verifyInput <- fromPayload{
+			payload: payload,
+			from:    msg.From,
+		}
 	}
 	result := true
 	for i := 0; i < len(request.Payload); i++ {
@@ -139,13 +147,13 @@ func (node *noiseNode) verifyReq(req []byte) bool {
 	return true
 }
 
-func (node *noiseNode) verifyPayload(payload *clientpb.Payload) bool {
+func (node *noiseNode) verifyPayload(payload *clientpb.Payload, from uint32) bool {
 	content := []byte(payload.Payload)
 	hash, err := sha256.ComputeHash(content)
 	if err != nil {
 		log.Fatal("sha256.ComputeHash: ", err)
 	}
-	b, err := themixECDSA.VerifyECDSA(node.ck, payload.Signature, hash)
+	b, err := themixECDSA.VerifyECDSA(node.peers[from].Ck, payload.Signature, hash)
 	if err != nil {
 		log.Fatal("themix.VerifyECDSA: ", err)
 	}
@@ -172,7 +180,7 @@ func (node *noiseNode) onReceiveMessage(msg *messagepb.Msg) {
 			log.Fatal("verify: consensus message verification fail")
 		}
 		if node.sign && msg.Type == messagepb.MsgType_VAL {
-			if !node.verifyReq(msg.Content) {
+			if !node.verifyReq(msg) {
 				log.Fatal("verifyReq: client request payload verification fail")
 			}
 		}
