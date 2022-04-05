@@ -3,6 +3,7 @@ package themix
 import (
 	"log"
 
+	"google.golang.org/protobuf/proto"
 	"themix.new.io/client/clientpb"
 	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/message/messagepb"
@@ -34,7 +35,7 @@ type Themix struct {
 	deltaBar     int
 	decided      int
 	finish       int
-	proposed     bool
+	proposal     *messagepb.Msg
 	decideValue  []byte
 }
 
@@ -95,7 +96,7 @@ func (themix *Themix) run() {
 				break
 			}
 			if msg.Type == messagepb.MsgType_VAL && msg.Proposer == themix.id && len(msg.Content) != 0 {
-				themix.proposed = true
+				themix.proposal = msg
 			}
 			if msg.Type == messagepb.MsgType_VAL || msg.Type == messagepb.MsgType_ECHO || msg.Type == messagepb.MsgType_READY || msg.Type == messagepb.MsgType_RCOLLECTION {
 				themix.rbcMsgc[msg.Proposer] <- msg
@@ -107,7 +108,7 @@ func (themix *Themix) run() {
 			themix.decided++
 			log.Println("themix decide number: ", themix.decided)
 			if themix.decided == 1 {
-				if !themix.proposed {
+				if themix.proposal == nil {
 					themix.reqc <- &clientpb.Request{}
 				}
 			} else if themix.decided == themix.n-themix.f {
@@ -119,11 +120,16 @@ func (themix *Themix) run() {
 					themix.abaMsgc[uint32(i)] <- m
 				}
 			} else if themix.decided == themix.n {
-				if themix.proposed && themix.decideValue[themix.id] == 1 {
+				if themix.proposal != nil && themix.decideValue[themix.id] == 1 {
 					themix.repc <- []byte{}
-				} else if themix.proposed {
+				} else if themix.proposal != nil {
 					log.Println("Reproposal")
-					// TODO(chenzx): reproposal this request in the next sequence.
+					var req *clientpb.Request
+					err := proto.Unmarshal(themix.proposal.Content, req)
+					if err != nil {
+						log.Fatal("proto.Unmarshal: ", err)
+					}
+					themix.reqc <- req
 				}
 				themix.outputc <- &messagepb.Msg{
 					Type: messagepb.MsgType_CANFINISH,
