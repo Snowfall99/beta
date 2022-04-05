@@ -15,7 +15,7 @@ type abaInstance struct {
 	outputc      chan *messagepb.Msg
 	deliverCh    chan *messagepb.Msg
 	finishCh     chan []byte
-	decideCh     chan []byte
+	decideCh     chan decideValue
 	id           uint32
 	proposer     uint32
 	sequence     uint32
@@ -47,7 +47,7 @@ type abaInstance struct {
 	lock         sync.Mutex
 }
 
-func initABA(id, proposer, sequence uint32, n, f, deltaBar int, blsSig *bls.BlsSig, msgc, outputc, deliverCh chan *messagepb.Msg, deciedeCh, finishCh chan []byte) *abaInstance {
+func initABA(id, proposer, sequence uint32, n, f, deltaBar int, blsSig *bls.BlsSig, msgc, outputc, deliverCh chan *messagepb.Msg, deciedeCh chan decideValue, finishCh chan []byte) *abaInstance {
 	log.Println("aba init")
 	aba := &abaInstance{
 		msgc:         msgc,
@@ -378,7 +378,10 @@ func (aba *abaInstance) newRound() {
 		}
 		aba.decided = true
 		log.Printf("aba %d decide", aba.id)
-		aba.decideCh <- []byte{aba.binVals}
+		aba.decideCh <- decideValue{
+			from:  aba.id,
+			value: aba.binVals,
+		}
 		nextVote = aba.binVals
 	} else if aba.binVals != 2 {
 		nextVote = aba.binVals

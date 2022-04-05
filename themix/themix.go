@@ -8,6 +8,11 @@ import (
 	"themix.new.io/message/messagepb"
 )
 
+type decideValue struct {
+	value uint8
+	from  uint32
+}
+
 type Themix struct {
 	inputc       chan *messagepb.Msg
 	outputc      chan *messagepb.Msg
@@ -17,7 +22,7 @@ type Themix struct {
 	abaFinishCh  map[uint32]chan []byte
 	reqc         chan *clientpb.Request
 	repc         chan []byte
-	decideCh     chan []byte
+	decideCh     chan decideValue
 	statusCh     chan uint32
 	rbcInstances []*rbcInstance
 	abaInstances []*abaInstance
@@ -30,6 +35,7 @@ type Themix struct {
 	decided      int
 	finish       int
 	proposed     bool
+	decideValue  []byte
 }
 
 func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
@@ -39,7 +45,7 @@ func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, i
 		reqc:         reqc,
 		repc:         repc,
 		statusCh:     statusCh,
-		decideCh:     make(chan []byte, n),
+		decideCh:     make(chan decideValue, n),
 		rbcFinishCh:  make(map[uint32]chan []byte),
 		abaFinishCh:  make(map[uint32]chan []byte),
 		rbcMsgc:      make(map[uint32]chan *messagepb.Msg),
@@ -52,6 +58,7 @@ func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, i
 		f:            f,
 		delta:        delta,
 		deltaBar:     deltaBar,
+		decideValue:  make([]byte, n),
 	}
 	for i := 0; i < int(n); i++ {
 		rbcMsgc := make(chan *messagepb.Msg, BUFFER)
@@ -95,7 +102,8 @@ func (themix *Themix) run() {
 			} else {
 				themix.abaMsgc[msg.Proposer] <- msg
 			}
-		case <-themix.decideCh:
+		case decideValue := <-themix.decideCh:
+			themix.decideValue[decideValue.from] = decideValue.value
 			themix.decided++
 			log.Println("themix decide number: ", themix.decided)
 			if themix.decided == 1 {
@@ -111,8 +119,11 @@ func (themix *Themix) run() {
 					themix.abaMsgc[uint32(i)] <- m
 				}
 			} else if themix.decided == themix.n {
-				if themix.proposed {
+				if themix.proposed && themix.decideValue[themix.id] == 1 {
 					themix.repc <- []byte{}
+				} else if themix.proposed {
+					log.Println("Reproposal")
+					// TODO(chenzx): reproposal this request in the next sequence.
 				}
 				themix.outputc <- &messagepb.Msg{
 					Type: messagepb.MsgType_CANFINISH,
