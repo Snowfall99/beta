@@ -22,7 +22,6 @@ Proposer communicates with client using gRPC, the message sent between them is i
 This repo is still under construction.
 
 ### Main Tasks
-- [ ] Liveness is broken in some case, not stable
-
-### Evaluation Tasks
-- [ ] Signature collection verification 
+- [ ] Liveness is broken in some case, not stable.
+- [ ] Signature collection verification.
+- [ ] BLS.recover: invalid signature.
