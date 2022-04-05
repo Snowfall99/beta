@@ -359,6 +359,9 @@ func (aba *abaInstance) getCoinInfo() []byte {
 }
 
 func (aba *abaInstance) newRound() {
+	if !aba.hasSentAux[aba.round] || aba.proposal == nil {
+		return
+	}
 	sigShares := make([][]byte, 0)
 	for _, m := range aba.coinMsgs[aba.round] {
 		if m != nil {
