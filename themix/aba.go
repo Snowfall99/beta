@@ -263,63 +263,65 @@ func (aba *abaInstance) handleMsg(msg *messagepb.Msg) {
 			aba.outputc <- m
 		}
 	case messagepb.MsgType_BZEROCOLLECTION:
-		if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
-			break
-		}
-		if !aba.verifyBzero(msg) {
-			log.Fatal("aba.verifyBzero fail")
-		}
-		aba.outputc <- msg
-		aba.zeroEndorsed[msg.Round] = true
-		aba.hasSentAux[msg.Round] = true
-		m := &messagepb.Msg{
-			Type:     messagepb.MsgType_AUX,
-			Proposer: msg.Proposer,
-			Seq:      msg.Seq,
-			Round:    msg.Round,
-			Content:  []byte{0},
-		}
-		aba.outputc <- m
-		if !aba.startB[aba.round] {
-			aba.startB[aba.round] = true
-			go func() {
-				time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
-				aba.expireB[aba.round] = true
-				aba.lock.Lock()
-				aba.sendCoin()
-				aba.lock.Unlock()
-			}()
-		}
+		// if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
+		// 	break
+		// }
+		// if !aba.verifyBzero(msg) {
+		// 	log.Fatal("aba.verifyBzero fail")
+		// }
+		// aba.outputc <- msg
+		// aba.zeroEndorsed[msg.Round] = true
+		// aba.hasSentAux[msg.Round] = true
+		// m := &messagepb.Msg{
+		// 	Type:     messagepb.MsgType_AUX,
+		// 	Proposer: msg.Proposer,
+		// 	Seq:      msg.Seq,
+		// 	Round:    msg.Round,
+		// 	Content:  []byte{0},
+		// }
+		// aba.outputc <- m
+		// if !aba.startB[aba.round] {
+		// 	aba.startB[aba.round] = true
+		// 	go func() {
+		// 		time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
+		// 		aba.expireB[aba.round] = true
+		// 		aba.lock.Lock()
+		// 		aba.sendCoin()
+		// 		aba.lock.Unlock()
+		// 	}()
+		// }
+		log.Println("BZEROCOLLECTION is not implemented")
 	case messagepb.MsgType_BONECOLLECTION:
-		if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
-			break
-		}
-		if !aba.verifyBone(msg) {
-			log.Fatal("aba.verifyBone fail")
-		}
-		aba.outputc <- msg
-		aba.oneEndorsed[msg.Round] = true
-		aba.hasSentAux[msg.Round] = true
-		m := &messagepb.Msg{
-			Type:     messagepb.MsgType_AUX,
-			Proposer: msg.Proposer,
-			Seq:      msg.Seq,
-			Round:    msg.Round,
-			Content:  []byte{1},
-		}
-		aba.outputc <- m
-		if !aba.startB[aba.round] {
-			aba.startB[aba.round] = true
-			go func() {
-				time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
-				aba.expireB[aba.round] = true
-				aba.lock.Lock()
-				aba.sendCoin()
-				aba.lock.Unlock()
-			}()
-		}
+		// if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
+		// 	break
+		// }
+		// if !aba.verifyBone(msg) {
+		// 	log.Fatal("aba.verifyBone fail")
+		// }
+		// aba.outputc <- msg
+		// aba.oneEndorsed[msg.Round] = true
+		// aba.hasSentAux[msg.Round] = true
+		// m := &messagepb.Msg{
+		// 	Type:     messagepb.MsgType_AUX,
+		// 	Proposer: msg.Proposer,
+		// 	Seq:      msg.Seq,
+		// 	Round:    msg.Round,
+		// 	Content:  []byte{1},
+		// }
+		// aba.outputc <- m
+		// if !aba.startB[aba.round] {
+		// 	aba.startB[aba.round] = true
+		// 	go func() {
+		// 		time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
+		// 		aba.expireB[aba.round] = true
+		// 		aba.lock.Lock()
+		// 		aba.sendCoin()
+		// 		aba.lock.Unlock()
+		// 	}()
+		// }
+		log.Println("BONECOLLECTION is not implemented")
 	default:
-		log.Fatal("Message's type is undefined")
+		log.Fatal("Undefined message type")
 	}
 }
 

@@ -164,15 +164,18 @@ func (rbc *rbcInstance) handleMsg(msg *messagepb.Msg) {
 			}
 		}
 	case messagepb.MsgType_RCOLLECTION:
-		if rbc.proposal == nil || rbc.deliver {
-			break
-		}
-		if !rbc.verifyRcollection(msg) {
-			log.Fatal("inst.verifyRcollection fail")
-		}
-		rbc.outputc <- msg
-		rbc.deliver = true
-		rbc.deliverCh <- rbc.proposal
+		// if rbc.proposal == nil || rbc.deliver {
+		// 	break
+		// }
+		// if !rbc.verifyRcollection(msg) {
+		// 	log.Fatal("inst.verifyRcollection fail")
+		// }
+		// rbc.outputc <- msg
+		// rbc.deliver = true
+		// rbc.deliverCh <- rbc.proposal
+		log.Println("RCOLLECTION is not implemented")
+	default:
+		log.Fatal("Undefined message type")
 	}
 }
 
