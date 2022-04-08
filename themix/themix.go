@@ -124,7 +124,7 @@ func (themix *Themix) run() {
 					themix.repc <- []byte{}
 				} else if themix.proposal != nil {
 					log.Println("Reproposal")
-					var req *clientpb.Request
+					req := &clientpb.Request{}
 					err := proto.Unmarshal(themix.proposal.Content, req)
 					if err != nil {
 						log.Fatal("proto.Unmarshal: ", err)
