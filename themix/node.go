@@ -21,7 +21,11 @@ func InitNode(id uint32, blsSig *bls.BlsSig, batch, n, f, delta, deltaBar int, p
 	repc := make(chan []byte)
 	client := clients[id]
 	go initProposer(batch, client, reqc, repc, outputc, id)
-	themixQue := initThemixQue(id, blsSig, n, f, delta, deltaBar, inputc, outputc, reqc, repc)
+	pubkeys := make(map[uint32]*ecdsa.PublicKey)
+	for _, peer := range peers {
+		pubkeys[peer.PeerID] = peer.Pub
+	}
+	themixQue := initThemixQue(id, blsSig, n, f, delta, deltaBar, inputc, outputc, reqc, repc, pubkeys)
 	noise.InitNoise(id, pk, ck, peers, inputc, outputc, sign)
 	return &Node{
 		themixQue: themixQue,

@@ -1,6 +1,7 @@
 package themix
 
 import (
+	"crypto/ecdsa"
 	"log"
 
 	"google.golang.org/protobuf/proto"
@@ -21,6 +22,7 @@ type Themix struct {
 	abaMsgc      map[uint32]chan *messagepb.Msg
 	rbcFinishCh  map[uint32]chan []byte
 	abaFinishCh  map[uint32]chan []byte
+	pubkeys      map[uint32]*ecdsa.PublicKey
 	reqc         chan *clientpb.Request
 	repc         chan []byte
 	decideCh     chan decideValue
@@ -39,7 +41,7 @@ type Themix struct {
 	decideValue  []byte
 }
 
-func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32) *Themix {
+func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc chan *messagepb.Msg, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, statusCh chan uint32, pubkeys map[uint32]*ecdsa.PublicKey) *Themix {
 	themix := &Themix{
 		inputc:       inputc,
 		outputc:      outputc,
@@ -60,6 +62,7 @@ func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, i
 		delta:        delta,
 		deltaBar:     deltaBar,
 		decideValue:  make([]byte, n),
+		pubkeys:      pubkeys,
 	}
 	for i := 0; i < int(n); i++ {
 		rbcMsgc := make(chan *messagepb.Msg, BUFFER)
@@ -71,8 +74,8 @@ func initThemix(id, seq uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, i
 		themix.abaFinishCh[uint32(i)] = abaFinishCh
 		themix.rbcMsgc[uint32(i)] = rbcMsgc
 		themix.abaMsgc[uint32(i)] = abaMsgc
-		themix.rbcInstances[i] = initRBC(uint32(i), themix.n, themix.f, themix.deltaBar, rbcMsgc, outputc, deliverCh, rbcFinishCh)
-		themix.abaInstances[i] = initABA(uint32(i), id, themix.seq, themix.n, themix.f, themix.deltaBar, blsSig, abaMsgc, outputc, deliverCh, themix.decideCh, abaFinishCh)
+		themix.rbcInstances[i] = initRBC(uint32(i), themix.n, themix.f, themix.deltaBar, rbcMsgc, outputc, deliverCh, rbcFinishCh, themix.pubkeys)
+		themix.abaInstances[i] = initABA(uint32(i), id, themix.seq, themix.n, themix.f, themix.deltaBar, blsSig, abaMsgc, outputc, deliverCh, themix.decideCh, abaFinishCh, themix.pubkeys)
 	}
 	return themix
 }

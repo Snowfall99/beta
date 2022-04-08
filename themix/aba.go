@@ -1,12 +1,14 @@
 package themix
 
 import (
+	"crypto/ecdsa"
 	"encoding/binary"
 	"log"
 	"sync"
 	"time"
 
 	bls "themix.new.io/crypto/themixBLS"
+	"themix.new.io/message"
 	"themix.new.io/message/messagepb"
 )
 
@@ -44,10 +46,12 @@ type abaInstance struct {
 	coinResult   [][]byte
 	startB       []bool
 	expireB      []bool
-	lock         sync.Mutex
+	// Peers ecdsa publickey.
+	pubkeys map[uint32]*ecdsa.PublicKey
+	lock    sync.Mutex
 }
 
-func initABA(id, proposer, sequence uint32, n, f, deltaBar int, blsSig *bls.BlsSig, msgc, outputc, deliverCh chan *messagepb.Msg, deciedeCh chan decideValue, finishCh chan []byte) *abaInstance {
+func initABA(id, proposer, sequence uint32, n, f, deltaBar int, blsSig *bls.BlsSig, msgc, outputc, deliverCh chan *messagepb.Msg, deciedeCh chan decideValue, finishCh chan []byte, pubkeys map[uint32]*ecdsa.PublicKey) *abaInstance {
 	log.Println("aba init")
 	aba := &abaInstance{
 		msgc:         msgc,
@@ -79,6 +83,7 @@ func initABA(id, proposer, sequence uint32, n, f, deltaBar int, blsSig *bls.BlsS
 		coinResult:   make([][]byte, maxround),
 		startB:       make([]bool, maxround),
 		expireB:      make([]bool, maxround),
+		pubkeys:      pubkeys,
 		lock:         sync.Mutex{},
 	}
 	for i := 0; i < maxround; i++ {
@@ -263,63 +268,61 @@ func (aba *abaInstance) handleMsg(msg *messagepb.Msg) {
 			aba.outputc <- m
 		}
 	case messagepb.MsgType_BZEROCOLLECTION:
-		// if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
-		// 	break
-		// }
-		// if !aba.verifyBzero(msg) {
-		// 	log.Fatal("aba.verifyBzero fail")
-		// }
-		// aba.outputc <- msg
-		// aba.zeroEndorsed[msg.Round] = true
-		// aba.hasSentAux[msg.Round] = true
-		// m := &messagepb.Msg{
-		// 	Type:     messagepb.MsgType_AUX,
-		// 	Proposer: msg.Proposer,
-		// 	Seq:      msg.Seq,
-		// 	Round:    msg.Round,
-		// 	Content:  []byte{0},
-		// }
-		// aba.outputc <- m
-		// if !aba.startB[aba.round] {
-		// 	aba.startB[aba.round] = true
-		// 	go func() {
-		// 		time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
-		// 		aba.expireB[aba.round] = true
-		// 		aba.lock.Lock()
-		// 		aba.sendCoin()
-		// 		aba.lock.Unlock()
-		// 	}()
-		// }
-		log.Println("BZEROCOLLECTION is not implemented")
+		if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
+			break
+		}
+		if !aba.verifyBzero(msg) {
+			log.Fatal("aba.verifyBzero fail")
+		}
+		aba.outputc <- msg
+		aba.zeroEndorsed[msg.Round] = true
+		aba.hasSentAux[msg.Round] = true
+		m := &messagepb.Msg{
+			Type:     messagepb.MsgType_AUX,
+			Proposer: msg.Proposer,
+			Seq:      msg.Seq,
+			Round:    msg.Round,
+			Content:  []byte{0},
+		}
+		aba.outputc <- m
+		if !aba.startB[aba.round] {
+			aba.startB[aba.round] = true
+			go func() {
+				time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
+				aba.expireB[aba.round] = true
+				aba.lock.Lock()
+				aba.sendCoin()
+				aba.lock.Unlock()
+			}()
+		}
 	case messagepb.MsgType_BONECOLLECTION:
-		// if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
-		// 	break
-		// }
-		// if !aba.verifyBone(msg) {
-		// 	log.Fatal("aba.verifyBone fail")
-		// }
-		// aba.outputc <- msg
-		// aba.oneEndorsed[msg.Round] = true
-		// aba.hasSentAux[msg.Round] = true
-		// m := &messagepb.Msg{
-		// 	Type:     messagepb.MsgType_AUX,
-		// 	Proposer: msg.Proposer,
-		// 	Seq:      msg.Seq,
-		// 	Round:    msg.Round,
-		// 	Content:  []byte{1},
-		// }
-		// aba.outputc <- m
-		// if !aba.startB[aba.round] {
-		// 	aba.startB[aba.round] = true
-		// 	go func() {
-		// 		time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
-		// 		aba.expireB[aba.round] = true
-		// 		aba.lock.Lock()
-		// 		aba.sendCoin()
-		// 		aba.lock.Unlock()
-		// 	}()
-		// }
-		log.Println("BONECOLLECTION is not implemented")
+		if aba.zeroEndorsed[msg.Round] || aba.oneEndorsed[msg.Round] || aba.hasSentAux[msg.Round] {
+			break
+		}
+		if !aba.verifyBone(msg) {
+			log.Fatal("aba.verifyBone fail")
+		}
+		aba.outputc <- msg
+		aba.oneEndorsed[msg.Round] = true
+		aba.hasSentAux[msg.Round] = true
+		m := &messagepb.Msg{
+			Type:     messagepb.MsgType_AUX,
+			Proposer: msg.Proposer,
+			Seq:      msg.Seq,
+			Round:    msg.Round,
+			Content:  []byte{1},
+		}
+		aba.outputc <- m
+		if !aba.startB[aba.round] {
+			aba.startB[aba.round] = true
+			go func() {
+				time.Sleep(time.Duration(aba.deltaBar) * time.Millisecond)
+				aba.expireB[aba.round] = true
+				aba.lock.Lock()
+				aba.sendCoin()
+				aba.lock.Unlock()
+			}()
+		}
 	default:
 		log.Fatal("Undefined message type")
 	}
@@ -371,6 +374,7 @@ func (aba *abaInstance) getCoinInfo() []byte {
 
 func (aba *abaInstance) newRound() {
 	if !aba.hasSentAux[aba.round] || aba.proposal == nil {
+		log.Println("aba.proposal == nil or !aba.sentAux")
 		return
 	}
 	sigShares := make([][]byte, 0)
@@ -418,10 +422,48 @@ func (aba *abaInstance) newRound() {
 	aba.outputc <- m
 }
 
-func (aba *abaInstance) verifyBzero(collection *messagepb.Msg) bool {
+func (aba *abaInstance) verifyBzero(msg *messagepb.Msg) bool {
+	m := &messagepb.Msg{
+		Type:     messagepb.MsgType_BVAL,
+		Proposer: msg.Proposer,
+		Seq:      msg.Seq,
+		Round:    msg.Round,
+		Content:  []byte{0},
+	}
+	content := message.GetMsgInfo(m)
+	collection := deserialCollection(msg.Collection)
+	for i, sign := range collection.Slot {
+		if len(sign) == 0 || aba.bzeroSign[msg.Round].Slot[i] != nil {
+			continue
+		}
+		if !verify(content, sign, aba.pubkeys[msg.From]) {
+			log.Fatal("[aba] verify bval zero signature collection fail")
+		}
+		aba.numBvalZero[msg.Round]++
+		aba.bzeroSign[msg.Round].Slot[i] = sign
+	}
 	return true
 }
 
-func (aba *abaInstance) verifyBone(collection *messagepb.Msg) bool {
+func (aba *abaInstance) verifyBone(msg *messagepb.Msg) bool {
+	m := &messagepb.Msg{
+		Type:     messagepb.MsgType_BVAL,
+		Proposer: msg.Proposer,
+		Seq:      msg.Seq,
+		Round:    msg.Round,
+		Content:  []byte{1},
+	}
+	content := message.GetMsgInfo(m)
+	collection := deserialCollection(msg.Collection)
+	for i, sign := range collection.Slot {
+		if len(sign) == 0 || aba.boneSign[msg.Round].Slot[i] != nil {
+			continue
+		}
+		if !verify(content, sign, aba.pubkeys[msg.From]) {
+			log.Fatal("[aba] verify bval one signature collection fail")
+		}
+		aba.numBvalOne[msg.Round]++
+		aba.boneSign[msg.Round].Slot[i] = sign
+	}
 	return true
 }

@@ -1,6 +1,8 @@
 package themix
 
 import (
+	"crypto/ecdsa"
+
 	"themix.new.io/client/clientpb"
 	bls "themix.new.io/crypto/themixBLS"
 	"themix.new.io/message/messagepb"
@@ -24,6 +26,7 @@ type ThemixQue struct {
 	statusCh chan uint32
 	msgc     map[uint32]chan *messagepb.Msg
 	queue    map[uint32]STATUS
+	pubkeys  map[uint32]*ecdsa.PublicKey
 	id       uint32
 	blsSig   *bls.BlsSig
 	n        int
@@ -32,7 +35,7 @@ type ThemixQue struct {
 	deltaBar int
 }
 
-func initThemixQue(id uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte) *ThemixQue {
+func initThemixQue(id uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inputc, outputc chan *messagepb.Msg, reqc chan *clientpb.Request, repc chan []byte, pubkeys map[uint32]*ecdsa.PublicKey) *ThemixQue {
 	return &ThemixQue{
 		inputc:   inputc,
 		outputc:  outputc,
@@ -47,6 +50,7 @@ func initThemixQue(id uint32, blsSig *bls.BlsSig, n, f, delta, deltaBar int, inp
 		f:        f,
 		delta:    delta,
 		deltaBar: deltaBar,
+		pubkeys:  pubkeys,
 	}
 }
 
@@ -67,7 +71,7 @@ func (themixQue *ThemixQue) run() {
 			} else {
 				ch := make(chan *messagepb.Msg, BUFFER)
 				themixQue.msgc[msg.Seq] = ch
-				themix := initThemix(themixQue.id, msg.Seq, themixQue.blsSig, themixQue.n, themixQue.f, themixQue.delta, themixQue.deltaBar, ch, themixQue.outputc, themixQue.reqc, themixQue.repc, themixQue.statusCh)
+				themix := initThemix(themixQue.id, msg.Seq, themixQue.blsSig, themixQue.n, themixQue.f, themixQue.delta, themixQue.deltaBar, ch, themixQue.outputc, themixQue.reqc, themixQue.repc, themixQue.statusCh, themixQue.pubkeys)
 				go themix.run()
 				themixQue.queue[msg.Seq] = ALIVE
 				themixQue.msgc[msg.Seq] <- msg

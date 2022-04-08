@@ -2,10 +2,12 @@ package themix
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"log"
 	"time"
 
 	"themix.new.io/crypto/sha256"
+	"themix.new.io/message"
 	"themix.new.io/message/messagepb"
 )
 
@@ -38,6 +40,8 @@ type rbcInstance struct {
 	startR bool
 	// Has already timeout R.
 	expireR bool
+	// Peers ecdsa publickey.
+	pubkeys map[uint32]*ecdsa.PublicKey
 
 	// Channel used for sending message to transport layer.
 	outputc chan *messagepb.Msg
@@ -49,7 +53,7 @@ type rbcInstance struct {
 	finishCh chan []byte
 }
 
-func initRBC(id uint32, n, f, deltaBar int, msgc, outputc, deliverCh chan *messagepb.Msg, finishCh chan []byte) *rbcInstance {
+func initRBC(id uint32, n, f, deltaBar int, msgc, outputc, deliverCh chan *messagepb.Msg, finishCh chan []byte, pubkeys map[uint32]*ecdsa.PublicKey) *rbcInstance {
 	log.Println("rbc init")
 	rbc := &rbcInstance{
 		id:        id,
@@ -61,6 +65,7 @@ func initRBC(id uint32, n, f, deltaBar int, msgc, outputc, deliverCh chan *messa
 		deliverCh: deliverCh,
 		finishCh:  finishCh,
 		readySign: &messagepb.Collection{Slot: make([][]byte, n)},
+		pubkeys:   pubkeys,
 	}
 	go rbc.run()
 	return rbc
@@ -122,7 +127,7 @@ func (rbc *rbcInstance) handleMsg(msg *messagepb.Msg) {
 						Type:     messagepb.MsgType_READY,
 						Proposer: msg.Proposer,
 						Seq:      msg.Seq,
-						Content:  msg.Content,
+						Content:  digest,
 					}
 					rbc.outputc <- m
 				}
@@ -164,21 +169,39 @@ func (rbc *rbcInstance) handleMsg(msg *messagepb.Msg) {
 			}
 		}
 	case messagepb.MsgType_RCOLLECTION:
-		// if rbc.proposal == nil || rbc.deliver {
-		// 	break
-		// }
-		// if !rbc.verifyRcollection(msg) {
-		// 	log.Fatal("inst.verifyRcollection fail")
-		// }
-		// rbc.outputc <- msg
-		// rbc.deliver = true
-		// rbc.deliverCh <- rbc.proposal
+		if rbc.deliver || rbc.digest == nil {
+			break
+		}
+		if !rbc.verifyRcollection(msg) {
+			break
+		}
+		rbc.outputc <- msg
+		rbc.deliver = true
+		rbc.deliverCh <- rbc.proposal
 		log.Println("RCOLLECTION is not implemented")
 	default:
 		log.Fatal("Undefined message type")
 	}
 }
 
-func (rbc *rbcInstance) verifyRcollection(collection *messagepb.Msg) bool {
+func (rbc *rbcInstance) verifyRcollection(msg *messagepb.Msg) bool {
+	m := &messagepb.Msg{
+		Type:     messagepb.MsgType_READY,
+		Proposer: msg.Proposer,
+		Seq:      msg.Seq,
+		Content:  rbc.digest,
+	}
+	content := message.GetMsgInfo(m)
+	collection := deserialCollection(msg.Collection)
+	for i, sign := range collection.Slot {
+		if len(sign) == 0 || rbc.readySign.Slot[i] != nil {
+			continue
+		}
+		if !verify(content, sign, rbc.pubkeys[msg.From]) {
+			log.Fatal("[rbc] verify ready signature collection fail")
+		}
+		rbc.numReady++
+		rbc.readySign.Slot[i] = sign
+	}
 	return true
 }
