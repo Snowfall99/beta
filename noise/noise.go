@@ -121,7 +121,7 @@ func (node *noiseNode) initVerifyPool() {
 	}
 }
 
-func (node *noiseNode) verifyReq(msg *messagepb.Msg) bool {
+func (node *noiseNode) verifyReq(msg *messagepb.Msg) {
 	request := &clientpb.Request{}
 	err := proto.Unmarshal(msg.Content, request)
 	if err != nil {
@@ -142,9 +142,9 @@ func (node *noiseNode) verifyReq(msg *messagepb.Msg) bool {
 		}
 	}
 	if !result {
-		return false
+		log.Fatal("verifyReq: verify client signature fail")
 	}
-	return true
+	node.inputc <- msg
 }
 
 func (node *noiseNode) verifyPayload(payload *clientpb.Payload, from uint32) bool {
@@ -174,18 +174,23 @@ func (node *noiseNode) Handler(ctx noise.HandlerContext) error {
 }
 
 func (node *noiseNode) onReceiveMessage(msg *messagepb.Msg) {
-	if msg.Type == messagepb.MsgType_VAL || msg.Type == messagepb.MsgType_ECHO ||
-		msg.Type == messagepb.MsgType_BVAL || msg.Type == messagepb.MsgType_AUX {
+	if msg.Type == messagepb.MsgType_VAL {
 		if !verify(msg, node.peers[msg.From].Pub) {
 			log.Fatal("verify: consensus message verification fail")
 		}
-		if node.sign && msg.Type == messagepb.MsgType_VAL {
-			if !node.verifyReq(msg) {
-				log.Fatal("verifyReq: client request payload verification fail")
-			}
+		if node.sign {
+			node.verifyReq(msg)
 		}
+	} else if msg.Type == messagepb.MsgType_ECHO ||
+		msg.Type == messagepb.MsgType_BVAL ||
+		msg.Type == messagepb.MsgType_AUX {
+		if !verify(msg, node.peers[msg.From].Pub) {
+			log.Fatal("verify: consensus message verification fail")
+		}
+		node.inputc <- msg
+	} else {
+		node.inputc <- msg
 	}
-	node.inputc <- msg
 }
 
 func (node *noiseNode) broadcast() {
