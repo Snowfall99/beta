@@ -94,8 +94,13 @@ func (aba *abaInstance) run() {
 	for {
 		select {
 		case msg := <-aba.msgc:
-			log.Printf("[aba] ID(%d), Type(%s), Prposer(%d), Seq(%d), From(%d), Round(%d)\n",
-				aba.id, messagepb.MsgType_name[int32(msg.Type)], msg.Proposer, msg.Seq, msg.From, msg.Round)
+			if len(msg.Content) > 0 {
+				log.Printf("[aba] ID(%d), Type(%s), Prposer(%d), Seq(%d), From(%d), Round(%d), Content(%d)\n",
+					aba.id, messagepb.MsgType_name[int32(msg.Type)], msg.Proposer, msg.Seq, msg.From, msg.Round, msg.Content[0])
+			} else {
+				log.Printf("[aba] ID(%d), Type(%s), Prposer(%d), Seq(%d), From(%d), Round(%d)\n",
+					aba.id, messagepb.MsgType_name[int32(msg.Type)], msg.Proposer, msg.Seq, msg.From, msg.Round)
+			}
 			aba.handleMsg(msg)
 		case proposal := <-aba.deliverCh:
 			aba.proposal = proposal

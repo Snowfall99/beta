@@ -70,8 +70,13 @@ func (rbc *rbcInstance) run() {
 	for {
 		select {
 		case msg := <-rbc.msgc:
-			log.Printf("[rbc] ID(%d), Type(%s), Prposer(%d), Seq(%d), From(%d), Round(%d)\n",
-				rbc.id, messagepb.MsgType_name[int32(msg.Type)], msg.Proposer, msg.Seq, msg.From, msg.Round)
+			if len(msg.Content) > 0 {
+				log.Printf("[rbc] ID(%d), Type(%s), Prposer(%d), Seq(%d), From(%d), Round(%d), Content(%d)\n",
+					rbc.id, messagepb.MsgType_name[int32(msg.Type)], msg.Proposer, msg.Seq, msg.From, msg.Round, msg.Content[0])
+			} else {
+				log.Printf("[rbc] ID(%d), Type(%s), Prposer(%d), Seq(%d), From(%d), Round(%d)\n",
+					rbc.id, messagepb.MsgType_name[int32(msg.Type)], msg.Proposer, msg.Seq, msg.From, msg.Round)
+			}
 			rbc.handleMsg(msg)
 		case <-rbc.finishCh:
 			log.Println("[rbc] finish")
