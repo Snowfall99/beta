@@ -320,17 +320,21 @@ func (aba *abaInstance) handleMsg(msg *messagepb.Msg) {
 
 func (aba *abaInstance) sendCoin() {
 	if !aba.hasSentCoin[aba.round] && aba.expireB[aba.round] {
-		if !aba.decided {
-			if aba.oneEndorsed[aba.round] && aba.numAuxOne[aba.round] >= aba.f+1 {
+		if aba.oneEndorsed[aba.round] && aba.numAuxOne[aba.round] >= aba.f+1 {
+			if !aba.decided {
 				aba.binVals = 1
-			} else if aba.zeroEndorsed[aba.round] && aba.numAuxZero[aba.round] >= aba.f+1 {
-				aba.binVals = 0
-			} else if aba.zeroEndorsed[aba.round] && aba.oneEndorsed[aba.round] &&
-				aba.numAuxZero[aba.round]+aba.numAuxOne[aba.round] >= aba.f+1 {
-				aba.binVals = 2
-			} else {
-				return
 			}
+		} else if aba.zeroEndorsed[aba.round] && aba.numAuxZero[aba.round] >= aba.f+1 {
+			if !aba.decided {
+				aba.binVals = 0
+			}
+		} else if aba.zeroEndorsed[aba.round] && aba.oneEndorsed[aba.round] &&
+			aba.numAuxZero[aba.round]+aba.numAuxOne[aba.round] >= aba.f+1 {
+			if !aba.decided {
+				aba.binVals = 2
+			}
+		} else {
+			return
 		}
 	} else {
 		return
