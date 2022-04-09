@@ -84,6 +84,6 @@ Result looks like
 This repo is still under construction.
 
 ### Main Tasks
-- [ ] Liveness is broken in some case, not stable.
-- [ ] Signature collection verification.
-- [ ] BLS.recover: invalid signature.
+- [ ] Liveness may be broken under some situation, further discussions are needed.
+- [ ] Benchmark: benchmark test is needed for performance evaluation.
+- [ ] CI/CD: should run benchmark test every time push/merge into master branch.
