@@ -15,9 +15,13 @@ import (
 )
 
 func initLog(id int) {
+	err := os.Mkdir("log", 0600)
+	if err != nil && !os.IsExist(err) {
+		panic(fmt.Sprint("os.Mkdir: ", err))
+	}
 	file, err := os.OpenFile(fmt.Sprintf("../log/%d.log", id), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprint("os.OpenFile: ", err))
 	}
 	log.SetOutput(file)
 }
@@ -29,25 +33,25 @@ func main() {
 	initLog(int(*id))
 	data, err := os.ReadFile("themix.config")
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprint("os.ReadFile: ", err))
 	}
 	var configuration configpb.Configuration
 	err = prototext.Unmarshal(data, &configuration)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprint("protext.Unmarshal: ", err))
 	}
 	blsSig, err := bls.InitBLS(configuration.BlsKeyPath,
 		len(configuration.Peers), int(len(configuration.Peers)/2+1), int(*id))
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprint("bls.InitBLS: ", err))
 	}
 	pk, err := themixECDSA.LoadKey(configuration.Pk)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprint("themixECDSA.LoadKey: ", err))
 	}
 	ck, err := themixECDSA.LoadKey(configuration.Ck)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprint("themixECDSA.LoadKey: ", err))
 	}
 	peers := make(map[uint32]*noise.Peer)
 	for idx, peerInfo := range configuration.Peers {

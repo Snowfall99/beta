@@ -178,7 +178,6 @@ func (rbc *rbcInstance) handleMsg(msg *messagepb.Msg) {
 		rbc.outputc <- msg
 		rbc.deliver = true
 		rbc.deliverCh <- rbc.proposal
-		log.Println("RCOLLECTION is not implemented")
 	default:
 		log.Fatal("Undefined message type")
 	}
