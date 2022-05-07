@@ -1,25 +1,24 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
 
 	"google.golang.org/protobuf/encoding/prototext"
 	"themix.new.io/config/configpb"
-	bls "themix.new.io/crypto/themixBLS"
+	"themix.new.io/crypto/themixBLS"
 	"themix.new.io/crypto/themixECDSA"
 	"themix.new.io/noise"
 	"themix.new.io/themix"
 )
 
-func initLog(id int) {
+func initLog() {
 	err := os.Mkdir("log", 0600)
 	if err != nil && !os.IsExist(err) {
 		panic(fmt.Sprint("os.Mkdir: ", err))
 	}
-	file, err := os.OpenFile(fmt.Sprintf("../log/%d.log", id), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	file, err := os.OpenFile("./node.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		panic(fmt.Sprint("os.OpenFile: ", err))
 	}
@@ -28,9 +27,9 @@ func initLog(id int) {
 
 func main() {
 	// id is set as a flag parameter for local test
-	id := flag.Uint("id", 0, "ID of themix node")
-	flag.Parse()
-	initLog(int(*id))
+	// id := flag.Uint("id", 0, "ID of themix node")
+	// flag.Parse()
+	initLog()
 	data, err := os.ReadFile("themix.config")
 	if err != nil {
 		panic(fmt.Sprint("os.ReadFile: ", err))
@@ -40,10 +39,10 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprint("protext.Unmarshal: ", err))
 	}
-	blsSig, err := bls.InitBLS(configuration.BlsKeyPath,
-		len(configuration.Peers), int(len(configuration.Peers)/2+1), int(*id))
+	blsSig, err := themixBLS.InitBLS(configuration.BlsKeyPath,
+		len(configuration.Peers), int(len(configuration.Peers)/2+1), int(configuration.Id))
 	if err != nil {
-		panic(fmt.Sprint("bls.InitBLS: ", err))
+		panic(fmt.Sprint("themixBLS.InitBLS: ", err))
 	}
 	pk, err := themixECDSA.LoadKey(configuration.Pk)
 	if err != nil {
@@ -66,7 +65,7 @@ func main() {
 	for i := 0; i < int(configuration.N); i++ {
 		clients = append(clients, configuration.Peers[i].Client)
 	}
-	node := themix.InitNode(uint32(*id), blsSig, int(configuration.Batch),
+	node := themix.InitNode(uint32(configuration.Id), blsSig, int(configuration.Batch),
 		int(configuration.N), int(configuration.F),
 		int(configuration.Delta), int(configuration.DeltaBar),
 		pk, &ck.PublicKey, peers, clients, configuration.Sign)

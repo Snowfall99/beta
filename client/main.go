@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"flag"
+	"fmt"
 	"log"
+	"os"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -15,7 +18,7 @@ import (
 
 var (
 	addr    = flag.String("addr", "localhost:11200", "address of the themix Node")
-	ckpath  = flag.String("ck", "../crypto/cmd/ecdsa", "client ecdsa key path")
+	ckpath  = flag.String("ck", "../crypto/", "client ecdsa key path")
 	number  = flag.Int("num", 1, "number of requests")
 	batch   = flag.Int("batch", 1, "batch size")
 	payload = flag.Int("payload", 600, "payload size")
@@ -23,6 +26,12 @@ var (
 
 func main() {
 	flag.Parse()
+	file, err := os.OpenFile("node.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0600)
+	if err != nil {
+		log.Fatal("os.OpenFile: ", err)
+	}
+	defer file.Close()
+
 	conn, err := grpc.Dial(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatal("grpc.Dial: ", err)
@@ -38,14 +47,17 @@ func main() {
 		log.Fatal("themixECDSA.LoadKey: ", err)
 	}
 
+	start := time.Now()
 	for i := 0; i < *number; i++ {
 		request := genClientRequest(*batch, *payload, ck)
-		resp, err := client.Post(context.Background(), request)
+		_, err := client.Post(context.Background(), request)
 		if err != nil {
 			log.Fatal("client.Post: ", err)
 		}
-		log.Println("resp: ", resp.GetOk())
+		file.Write([]byte("ok"))
 	}
+	end := time.Now()
+	file.Write([]byte(fmt.Sprintf("finish %d txs in %d", *number**batch, end.Sub(start).Milliseconds())))
 }
 
 func genClientRequest(batchsize, payloadsize int, ck *ecdsa.PrivateKey) *clientpb.Request {

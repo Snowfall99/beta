@@ -4,7 +4,7 @@ package configpb;
 option go_package = "./configpb";
 
 message Configuration {
-    // uint32 id = 1;
+    int32 id = 1;
     int32 batch = 2;
     int32 n = 3;
     int32 f = 4;

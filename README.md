@@ -1,6 +1,6 @@
-## What is ThemiX-beta?
+## ThemiX-Beta
 
-ThemiX-beta is the normal case version of the time-assumption balanced consensus ThemiX.
+ThemiX-beta is an implementation of the normal case version for timing-balanced BFT consensus ThemiX.
 
 ## Design Overview
 
@@ -83,7 +83,9 @@ Result looks like
 ## Under Construction
 This repo is still under construction.
 
-### Main Tasks
+### TODO
 - [ ] Liveness may be broken under some situation, further discussions are needed.
 - [ ] Benchmark: benchmark test is needed for performance evaluation.
 - [ ] CI/CD: should run benchmark test every time push/merge into master branch.
+
+## Reference
