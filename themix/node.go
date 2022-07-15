@@ -2,6 +2,7 @@ package themix
 
 import (
 	"crypto/ecdsa"
+	"log"
 
 	"themix.new.io/client/clientpb"
 	bls "themix.new.io/crypto/themixBLS"
@@ -34,5 +35,6 @@ func InitNode(id uint32, blsSig *bls.BlsSig, batch, n, f, delta, deltaBar int, p
 
 func (node *Node) Run() {
 	// go node.proposer.run()
+	log.Print("Node is running")
 	node.themixQue.run()
 }

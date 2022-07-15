@@ -18,7 +18,7 @@ func initLog() {
 	if err != nil && !os.IsExist(err) {
 		panic(fmt.Sprint("os.Mkdir: ", err))
 	}
-	file, err := os.OpenFile("./node.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	file, err := os.OpenFile("./log/node.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		panic(fmt.Sprint("os.OpenFile: ", err))
 	}
